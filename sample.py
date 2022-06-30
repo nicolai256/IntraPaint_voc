@@ -113,10 +113,48 @@ parser.add_argument('--ddim', dest='ddim', action='store_true') # turn on to use
 
 parser.add_argument('--ddpm', dest='ddpm', action='store_true') # turn on to use 50 step ddim
 
+parser.add_argument('--edit_ui', dest='edit_ui', action='store_true') # Use extended inpainting UI
+
+parser.add_argument('--ui_test', dest='ui_test', action='store_true') # Test UI without loading real functionality
+
+
 args = parser.parse_args()
 
 if args.edit and not args.mask:
-    from edit_ui.main_window import MainWindow as Draw
+    from edit_ui.quickedit_window import QuickEditWindow
+elif args.ui_test or args.edit_ui:
+    from edit_ui.main_window import MainWindow
+    from edit_ui.sample_selector import SampleSelector
+
+if args.ui_test:
+    from PyQt5.QtWidgets import QApplication
+    print('Testing expanded inpainting UI')
+    app = QApplication(sys.argv)
+    screen = app.primaryScreen()
+    size = screen.availableGeometry()
+    def inpaint(window, selection, mask, prompt, batchSize, batchCount):
+        print("Mock inpainting call:")
+        print(f"\tselection: {selection}")
+        print(f"\tmask: {mask}")
+        print(f"\tprompt: {prompt}")
+        print(f"\tbatchSize: {batchSize}")
+        print(f"\tbatchCount: {batchCount}")
+        def close():
+            selector = window.centralWidget.currentWidget()
+            window.centralWidget.setCurrentWidget(window.mainWidget)
+            window.centralWidget.removeWidget(selector)
+            window.update()
+        sampleSelector = SampleSelector(size.width(), size.height(), batchSize, batchCount, None, close)
+        window.centralWidget.addWidget(sampleSelector)
+        window.centralWidget.setCurrentWidget(sampleSelector)
+        window.update()
+        
+    d = MainWindow(size.width(), size.height(), None, inpaint)
+    d.applyArgs(args)
+    d.show()
+    app.exec_()
+    sys.exit()
+
 
 def fetch(url_or_path):
     if str(url_or_path).startswith('http://') or str(url_or_path).startswith('https://'):
@@ -240,15 +278,14 @@ clip_model, clip_preprocess = clip.load('ViT-L/14', device=device, jit=False)
 clip_model.eval().requires_grad_(False)
 normalize = transforms.Normalize(mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])
 
-def do_run():
-    if args.seed >= 0:
-        torch.manual_seed(args.seed)
+print("Loaded models")
 
+def createSampleFunction(image, mask, prompt):
     # bert context
-    text_emb = bert.encode([args.text]*args.batch_size).to(device).float()
+    text_emb = bert.encode([prompt]*args.batch_size).to(device).float()
     text_blank = bert.encode([args.negative]*args.batch_size).to(device).float()
 
-    text = clip.tokenize([args.text]*args.batch_size, truncate=True).to(device)
+    text = clip.tokenize([prompt]*args.batch_size, truncate=True).to(device)
     text_clip_blank = clip.tokenize([args.negative]*args.batch_size, truncate=True).to(device)
 
 
@@ -263,71 +300,66 @@ def do_run():
     image_embed = None
 
     # image context
-    if args.edit:
-        if args.edit.endswith('.npy'):
+    if args.edit or args.edit_ui:
+        input_image = torch.zeros(1, 4, args.height//8, args.width//8, device=device)
+        input_image_pil = None
+        np_image = None
+        if isinstance(image, Image.Image):
+            input_image = torch.zeros(1, 4, args.height//8, args.width//8, device=device)
+            input_image_pil = image
+        elif args.edit and args.edit.endswith('.npy'):
             with open(args.edit, 'rb') as f:
-                im = np.load(f)
-                im = torch.from_numpy(im).unsqueeze(0).to(device)
-
+                np_image = np.load(f)
+                np_image = torch.from_numpy(np_image).unsqueeze(0).to(device)
                 input_image = torch.zeros(1, 4, args.height//8, args.width//8, device=device)
-
-                y = args.edit_y//8
-                x = args.edit_x//8
-
-                ycrop = y + im.shape[2] - input_image.shape[2]
-                xcrop = x + im.shape[3] - input_image.shape[3]
-
-                ycrop = ycrop if ycrop > 0 else 0
-                xcrop = xcrop if xcrop > 0 else 0
-
-                input_image[0,:,y if y >=0 else 0:y+im.shape[2],x if x >=0 else 0:x+im.shape[3]] = im[:,:,0 if y > 0 else -y:im.shape[2]-ycrop,0 if x > 0 else -x:im.shape[3]-xcrop]
-
-                input_image_pil = ldm.decode(input_image)
-                input_image_pil = TF.to_pil_image(input_image_pil.squeeze(0).add(1).div(2).clamp(0, 1))
-
-                input_image *= 0.18215
-        else:
+        elif args.edit:
             w = args.edit_width if args.edit_width else args.width
             h = args.edit_height if args.edit_height else args.height
-
             input_image_pil = Image.open(fetch(args.edit)).convert('RGB')
             input_image_pil = ImageOps.fit(input_image_pil, (w, h))
+        if input_image_pil is not None:
+            np_image = transforms.ToTensor()(input_image_pil).unsqueeze(0).to(device)
+            np_image = 2 * np_image - 1
+            np_image = ldm.encode(np_image).sample()
 
-            input_image = torch.zeros(1, 4, args.height//8, args.width//8, device=device)
+        y = args.edit_y//8
+        x = args.edit_x//8
+        ycrop = y + np_image.shape[2] - input_image.shape[2]
+        xcrop = x + np_image.shape[3] - input_image.shape[3]
 
-            im = transforms.ToTensor()(input_image_pil).unsqueeze(0).to(device)
-            im = 2*im-1
-            im = ldm.encode(im).sample()
+        ycrop = ycrop if ycrop > 0 else 0
+        xcrop = xcrop if xcrop > 0 else 0
 
-            y = args.edit_y//8
-            x = args.edit_x//8
+        input_image[
+            0,
+            :,
+            y if y >=0 else 0:y+np_image.shape[2],
+            x if x >=0 else 0:x+np_image.shape[3]
+        ] = np_image[
+            :,
+            :,
+            0 if y > 0 else -y:np_image.shape[2]-ycrop,
+            0 if x > 0 else -x:np_image.shape[3]-xcrop
+        ]
+        input_image_pil = ldm.decode(input_image)
+        input_image_pil = TF.to_pil_image(input_image_pil.squeeze(0).add(1).div(2).clamp(0, 1))
+        input_image *= 0.18215
 
-            input_image = torch.zeros(1, 4, args.height//8, args.width//8, device=device)
-
-            ycrop = y + im.shape[2] - input_image.shape[2]
-            xcrop = x + im.shape[3] - input_image.shape[3]
-
-            ycrop = ycrop if ycrop > 0 else 0
-            xcrop = xcrop if xcrop > 0 else 0
-
-            input_image[0,:,y if y >=0 else 0:y+im.shape[2],x if x >=0 else 0:x+im.shape[3]] = im[:,:,0 if y > 0 else -y:im.shape[2]-ycrop,0 if x > 0 else -x:im.shape[3]-xcrop]
-
-            input_image_pil = ldm.decode(input_image)
-            input_image_pil = TF.to_pil_image(input_image_pil.squeeze(0).add(1).div(2).clamp(0, 1))
-
-            input_image *= 0.18215
-
-        if args.mask:
+        if isinstance(mask, Image.Image):
+            mask_image = mask
+            mask_image = mask_image.resize((args.width//8,args.height//8), Image.LANCZOS)
+            mask = transforms.ToTensor()(mask_image).unsqueeze(0).to(device)
+        elif args.mask:
             mask_image = Image.open(fetch(args.mask)).convert('L')
-            mask_image = mask_image.resize((args.width//8,args.height//8), Image.ANTIALIAS)
+            mask_image = mask_image.resize((args.width//8,args.height//8), Image.LANCZOS)
             mask = transforms.ToTensor()(mask_image).unsqueeze(0).to(device)
         else:
             from PyQt5.QtWidgets import QApplication
             print('draw the area for inpainting, then close the window')
             app = QApplication(sys.argv)
-            d = Draw(args.width, args.height, input_image_pil)
+            d = QuickEditWindow(args.width, args.height, input_image_pil)
             app.exec_()
-            mask_image = d.getCanvas().convert('L').point( lambda p: 255 if p < 1 else 0 )
+            mask_image = d.getMask().convert('L').point( lambda p: 255 if p < 1 else 0 )
             mask_image.save('mask.png')
             mask_image = mask_image.resize((args.width//8,args.height//8), Image.ANTIALIAS)
             mask = transforms.ToTensor()(mask_image).unsqueeze(0).to(device)
@@ -342,7 +374,7 @@ def do_run():
         # using inpaint model but no image is provided
         image_embed = torch.zeros(args.batch_size*2, 4, args.height//8, args.width//8, device=device)
 
-    kwargs = {
+    model_kwargs = {
         "context": torch.cat([text_emb, text_blank], dim=0).float(),
         "clip_embed": torch.cat([text_emb_clip, text_emb_clip_blank], dim=0).float() if model_params['clip_embed_dim'] else None,
         "image_embed": image_embed
@@ -396,69 +428,78 @@ def do_run():
             return -torch.autograd.grad(loss, x)[0]
  
     if args.ddpm:
-        sample_fn = diffusion.ddpm_sample_loop_progressive
+        base_sample_fn = diffusion.ddpm_sample_loop_progressive
     elif args.ddim:
-        sample_fn = diffusion.ddim_sample_loop_progressive
+        base_sample_fn = diffusion.ddim_sample_loop_progressive
     else:
-        sample_fn = diffusion.plms_sample_loop_progressive
+        base_sample_fn = diffusion.plms_sample_loop_progressive
+    def sample_fn(init):
+        return base_sample_fn(
+            model_fn,
+            (args.batch_size*2, 4, int(args.height/8), int(args.width/8)),
+            clip_denoised=False,
+            model_kwargs=model_kwargs,
+            cond_fn=cond_fn if args.clip_guidance else None,
+            device=device,
+            progress=True,
+            init_image=init,
+            skip_timesteps=args.skip_timesteps
+        )
+    return sample_fn
 
-    def save_sample(i, sample, clip_score=False):
-        for k, image in enumerate(sample['pred_xstart'][:args.batch_size]):
-            image /= 0.18215
-            im = image.unsqueeze(0)
-            out = ldm.decode(im)
-
-            npy_filename = f'output_npy/{args.prefix}{i * args.batch_size + k:05}.npy'
-            with open(npy_filename, 'wb') as outfile:
-                np.save(outfile, image.detach().cpu().numpy())
-
-            out = TF.to_pil_image(out.squeeze(0).add(1).div(2).clamp(0, 1))
-
-            filename = f'output/{args.prefix}{i * args.batch_size + k:05}.png'
-            out.save(filename)
-
-            if clip_score:
-                image_emb = clip_model.encode_image(clip_preprocess(out).unsqueeze(0).to(device))
-                image_emb_norm = image_emb / image_emb.norm(dim=-1, keepdim=True)
-
-                similarity = torch.nn.functional.cosine_similarity(image_emb_norm, text_emb_norm, dim=-1)
-
-                final_filename = f'output/{args.prefix}_{similarity.item():0.3f}_{i * args.batch_size + k:05}.png'
-                os.rename(filename, final_filename)
-
-                npy_final = f'output_npy/{args.prefix}_{similarity.item():0.3f}_{i * args.batch_size + k:05}.npy'
-                os.rename(npy_filename, npy_final)
-
+def generateSamples(sample_fn, save_sample, batch_size, num_batches):
     if args.init_image:
         init = Image.open(args.init_image).convert('RGB')
         init = init.resize((int(args.width),  int(args.height)), Image.LANCZOS)
         init = TF.to_tensor(init).to(device).unsqueeze(0).clamp(0,1)
         h = ldm.encode(init * 2 - 1).sample() *  0.18215
-        init = torch.cat(args.batch_size*2*[h], dim=0)
+        init = torch.cat(batch_size*2*[h], dim=0)
     else:
         init = None
-
-    for i in range(args.num_batches):
+    for i in range(num_batches):
         cur_t = diffusion.num_timesteps - 1
-
-        samples = sample_fn(
-            model_fn,
-            (args.batch_size*2, 4, int(args.height/8), int(args.width/8)),
-            clip_denoised=False,
-            model_kwargs=kwargs,
-            cond_fn=cond_fn if args.clip_guidance else None,
-            device=device,
-            progress=True,
-            init_image=init,
-            skip_timesteps=args.skip_timesteps,
-        )
-
+        samples = sample_fn(init)
         for j, sample in enumerate(samples):
             cur_t -= 1
             if j % 5 == 0 and j != diffusion.num_timesteps - 1:
                 save_sample(i, sample)
-
         save_sample(i, sample, args.clip_score)
+
+def do_run():
+    if args.seed >= 0:
+        torch.manual_seed(args.seed)
+    if args.edit_ui:
+        print("TODO: edit ui impl")
+    else:
+        sample_fn = createSampleFunction(None, None, args.text)
+        def save_sample(i, sample, clip_score=False):
+            for k, image in enumerate(sample['pred_xstart'][:args.batch_size]):
+                image /= 0.18215
+                im = image.unsqueeze(0)
+                out = ldm.decode(im)
+
+                npy_filename = f'output_npy/{args.prefix}{i * args.batch_size + k:05}.npy'
+                with open(npy_filename, 'wb') as outfile:
+                    np.save(outfile, image.detach().cpu().numpy())
+
+                out = TF.to_pil_image(out.squeeze(0).add(1).div(2).clamp(0, 1))
+
+                filename = f'output/{args.prefix}{i * args.batch_size + k:05}.png'
+                out.save(filename)
+
+                if clip_score:
+                    image_emb = clip_model.encode_image(clip_preprocess(out).unsqueeze(0).to(device))
+                    image_emb_norm = image_emb / image_emb.norm(dim=-1, keepdim=True)
+
+                    similarity = torch.nn.functional.cosine_similarity(image_emb_norm, text_emb_norm, dim=-1)
+
+                    final_filename = f'output/{args.prefix}_{similarity.item():0.3f}_{i * args.batch_size + k:05}.png'
+                    os.rename(filename, final_filename)
+
+                    npy_final = f'output_npy/{args.prefix}_{similarity.item():0.3f}_{i * args.batch_size + k:05}.npy'
+                    os.rename(npy_filename, npy_final)
+        generateSamples(sample_fn, save_sample, args.batch_size, args.num_batches)
+
 
 gc.collect()
 do_run()

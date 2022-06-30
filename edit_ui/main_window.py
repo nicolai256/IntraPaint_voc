@@ -1,63 +1,58 @@
 from PyQt5.QtWidgets import *
-from edit_ui.mask_creator import MaskCreator
-from edit_ui.image_viewer import ImageViewer
+from PyQt5.QtCore import Qt
+from edit_ui.mask_panel import MaskPanel
+from edit_ui.image_panel import ImagePanel
+from edit_ui.inpainting_panel import InpaintingPanel
 import PyQt5.QtGui as QtGui
+from PIL import Image
 
 class MainWindow(QMainWindow):
 
-    def __init__(self, width, height, im):
+    def __init__(self, width, height, im, doInpaint):
         super().__init__()
-        # Main image view controls
-        self.imageViewer = ImageViewer(im)
-        self.fileSelectButton = QPushButton(self)
-        self.fileSelectButton.setText("Select Image")
-        self.fileTextBox = QLineEdit("Image Path goes here", self)
-        self.imgReloadButton = QPushButton(self)
-        self.imgReloadButton.setText("Reload image")
-        self.xCoordBox = QSpinBox(self)
-        self.yCoordBox = QSpinBox(self)
-        imageViewLayout = QGridLayout()
-        imageViewLayout.addWidget(self.imageViewer, 0, 0, 1, 14)
-        imageViewLayout.addWidget(self.fileSelectButton, 1, 0, 1, 2)
-        imageViewLayout.addWidget(self.fileTextBox, 1, 2, 1, 8)
-        imageViewLayout.addWidget(self.imgReloadButton, 1, 10, 1, 2)
-        imageViewLayout.addWidget(self.xCoordBox, 1, 12, 1, 1)
-        imageViewLayout.addWidget(self.yCoordBox, 1, 13, 1, 1)
 
-        #Image mask controls
-        self.maskCreator = MaskCreator(im)
-        self.selectMaskAreaButton = QPushButton(self)
-        self.clearMaskButton = QPushButton(self)
-        self.maskBrushSizeBox = QSpinBox(self)
+        self.imagePanel = ImagePanel(im)
+        self.maskPanel = MaskPanel(im, lambda: self.imagePanel.getSelection())
+        self.inpaintPanel = InpaintingPanel(
+                lambda sel, mask, txt, sz, ct: doInpaint(self, sel, mask, txt, sz, ct),\
+                lambda: self.imagePanel.getImage(), \
+                lambda: self.imagePanel.getSelection(), \
+                lambda: self.maskPanel.getMask())
+        def writeMaskIntoImage():
+            mask = self.maskPanel.getMask()
+            if mask is not None:
+                self.imagePanel.imageViewer.insertIntoSelection(mask)
+        self.inpaintPanel.saveButton.clicked.connect(writeMaskIntoImage)
 
-        #Inpainting controls
-        self.textPromptBox = QLineEdit("Image generation prompt here", self)
-        self.batchSizeBox = QSpinBox(self)
-        self.batchCountBox = QSpinBox(self)
-        self.inpaintButton = QPushButton();
-        self.saveButton = QPushButton(self)
 
-        self.centralWidget = QWidget(self);
-        self.setCentralWidget(self.centralWidget)
+        self.setGeometry(0, 0, width, height)
         self.layout = QGridLayout()
-        #self.layout.addWidget(self.maskCreator, 0, 1, 1, 1)
-        self.layout.addLayout(imageViewLayout, 0, 0, 2, 1)
-        
-        def selectArea():
-            selection = self.imageViewer.getSelection()
-            if selection is not None:
-                self.maskCreator.loadImage(selection)
+        self.layout.addWidget(self.imagePanel, 0, 0, 1, 1)
+        self.layout.addWidget(self.maskPanel, 0, 1, 1, 1)
+        self.layout.addWidget(self.inpaintPanel, 2, 0, 1, 2)
+        self.layout.setRowStretch(0, 100)
+        self.layout.setColumnStretch(0, 255)
+        self.layout.setColumnStretch(1, 55)
+        self.layout.setColumnMinimumWidth(1, 300)
+        self.mainWidget = QWidget(self);
+        self.mainWidget.setLayout(self.layout)
 
-        self.button = QPushButton(self)
-        self.button.clicked.connect(selectArea)
+        self.centralWidget = QStackedWidget(self);
+        self.centralWidget.addWidget(self.mainWidget)
+        self.setCentralWidget(self.centralWidget)
+        self.centralWidget.setCurrentWidget(self.mainWidget)
 
-        
-        
-        self.centralWidget.setLayout(self.layout)
+    def applyArgs(self, args):
+        if args.init_image:
+            image = Image.open(open(args.init_image, 'rb')).convert('RGB')
+            self.imagePanel.imageViewer.loadImage(image)
+            self.imagePanel.fileTextBox.setText(args.init_image)
+        if args.text:
+            self.inpaintPanel.textPromptBox.setText(args.text)
+        if args.num_batches:
+            self.inpaintPanel.batchCountBox.setValue(args.num_batches)
+        if args.batch_size:
+            self.inpaintPanel.batchSizeBox.setValue(args.batch_size)
 
-        self.setGeometry(0, 0, im.width, im.height)
-        self.resize(self.maskCreator.image.width() * 4, self.maskCreator.image.height() * 4)
-        self.show()
-
-    def getCanvas(self):
-        return self.maskCreator.getCanvas()
+    def getMask(self):
+        return self.maskPanel.getMask()
