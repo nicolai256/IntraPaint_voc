@@ -29,7 +29,7 @@ class MaskPanel(QWidget):
         self.maskBrushSizeBox = QSpinBox(self)
         self.maskBrushSizeBox.setToolTip("Brush size")
         self.maskBrushSizeBox.setRange(1, 64)
-        self.maskBrushSizeBox.setValue(maskCreator.brushSize)
+        self.maskBrushSizeBox.setValue(maskCreator.getBrushSize())
         self.maskBrushSizeBox.valueChanged.connect(lambda newSize: maskCreator.setBrushSize(newSize))
         
 
