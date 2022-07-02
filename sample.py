@@ -123,32 +123,25 @@ args = parser.parse_args()
 if args.edit and not args.mask:
     from edit_ui.quickedit_window import QuickEditWindow
 elif args.ui_test or args.edit_ui:
+    from PyQt5.QtWidgets import QApplication
     from edit_ui.main_window import MainWindow
     from edit_ui.sample_selector import SampleSelector
 
 if args.ui_test:
-    from PyQt5.QtWidgets import QApplication
     print('Testing expanded inpainting UI')
     app = QApplication(sys.argv)
     screen = app.primaryScreen()
     size = screen.availableGeometry()
-    def inpaint(window, selection, mask, prompt, batchSize, batchCount):
+    def inpaint(selection, mask, prompt, batchSize, batchCount, showSample):
         print("Mock inpainting call:")
         print(f"\tselection: {selection}")
         print(f"\tmask: {mask}")
         print(f"\tprompt: {prompt}")
         print(f"\tbatchSize: {batchSize}")
         print(f"\tbatchCount: {batchCount}")
-        def close():
-            selector = window.centralWidget.currentWidget()
-            window.centralWidget.setCurrentWidget(window.mainWidget)
-            window.centralWidget.removeWidget(selector)
-            window.update()
-        sampleSelector = SampleSelector(size.width(), size.height(), batchSize, batchCount, None, close)
-        window.centralWidget.addWidget(sampleSelector)
-        window.centralWidget.setCurrentWidget(sampleSelector)
-        window.update()
-        
+        print(f"\tshowSample: {showSample}")
+        testSample = Image.open(open('mask.png', 'rb')).convert('RGB')
+        showSample(testSample, 0, 0)
     d = MainWindow(size.width(), size.height(), None, inpaint)
     d.applyArgs(args)
     d.show()
@@ -280,13 +273,13 @@ normalize = transforms.Normalize(mean=[0.48145466, 0.4578275, 0.40821073], std=[
 
 print("Loaded models")
 
-def createSampleFunction(image, mask, prompt):
+def createSampleFunction(image, mask, prompt, batch_size):
     # bert context
-    text_emb = bert.encode([prompt]*args.batch_size).to(device).float()
-    text_blank = bert.encode([args.negative]*args.batch_size).to(device).float()
+    text_emb = bert.encode([prompt]*batch_size).to(device).float()
+    text_blank = bert.encode([args.negative]*batch_size).to(device).float()
 
-    text = clip.tokenize([prompt]*args.batch_size, truncate=True).to(device)
-    text_clip_blank = clip.tokenize([args.negative]*args.batch_size, truncate=True).to(device)
+    text = clip.tokenize([prompt]*batch_size, truncate=True).to(device)
+    text_clip_blank = clip.tokenize([args.negative]*batch_size, truncate=True).to(device)
 
 
     # clip context
@@ -346,7 +339,8 @@ def createSampleFunction(image, mask, prompt):
         input_image *= 0.18215
 
         if isinstance(mask, Image.Image):
-            mask_image = mask
+            mask_image = mask.convert('L').point( lambda p: 255 if p < 1 else 0 )
+            mask_image.save('mask.png')
             mask_image = mask_image.resize((args.width//8,args.height//8), Image.LANCZOS)
             mask = transforms.ToTensor()(mask_image).unsqueeze(0).to(device)
         elif args.mask:
@@ -369,10 +363,10 @@ def createSampleFunction(image, mask, prompt):
 
         input_image *= mask1
 
-        image_embed = torch.cat(args.batch_size*2*[input_image], dim=0).float()
+        image_embed = torch.cat(batch_size*2*[input_image], dim=0).float()
     elif model_params['image_condition']:
         # using inpaint model but no image is provided
-        image_embed = torch.zeros(args.batch_size*2, 4, args.height//8, args.width//8, device=device)
+        image_embed = torch.zeros(batch_size*2, 4, args.height//8, args.width//8, device=device)
 
     model_kwargs = {
         "context": torch.cat([text_emb, text_blank], dim=0).float(),
@@ -395,16 +389,16 @@ def createSampleFunction(image, mask, prompt):
 
     def cond_fn(x, t, context=None, clip_embed=None, image_embed=None):
         with torch.enable_grad():
-            x = x[:args.batch_size].detach().requires_grad_()
+            x = x[:batch_size].detach().requires_grad_()
 
             n = x.shape[0]
 
             my_t = torch.ones([n], device=device, dtype=torch.long) * cur_t
 
             kw = {
-                'context': context[:args.batch_size],
-                'clip_embed': clip_embed[:args.batch_size] if model_params['clip_embed_dim'] else None,
-                'image_embed': image_embed[:args.batch_size] if image_embed is not None else None
+                'context': context[:batch_size],
+                'clip_embed': clip_embed[:batch_size] if model_params['clip_embed_dim'] else None,
+                'image_embed': image_embed[:batch_size] if image_embed is not None else None
             }
 
             out = diffusion.p_mean_variance(model, x, my_t, clip_denoised=False, model_kwargs=kw)
@@ -436,7 +430,7 @@ def createSampleFunction(image, mask, prompt):
     def sample_fn(init):
         return base_sample_fn(
             model_fn,
-            (args.batch_size*2, 4, int(args.height/8), int(args.width/8)),
+            (batch_size*2, 4, int(args.height/8), int(args.width/8)),
             clip_denoised=False,
             model_kwargs=model_kwargs,
             cond_fn=cond_fn if args.clip_guidance else None,
@@ -469,9 +463,27 @@ def do_run():
     if args.seed >= 0:
         torch.manual_seed(args.seed)
     if args.edit_ui:
-        print("TODO: edit ui impl")
+        app = QApplication(sys.argv)
+        screen = app.primaryScreen()
+        size = screen.availableGeometry()
+        def inpaint(selection, mask, prompt, batchSize, batchCount, showSample):
+            gc.collect()
+            sample_fn = createSampleFunction(selection, mask, prompt, batchSize)
+            def save_sample(i, sample, clip_score=False):
+                for k, image in enumerate(sample['pred_xstart'][:batchSize]):
+                    image /= 0.18215
+                    im = image.unsqueeze(0)
+                    out = ldm.decode(im)
+                    out = TF.to_pil_image(out.squeeze(0).add(1).div(2).clamp(0, 1))
+                    showSample(out, k, i) 
+            generateSamples(sample_fn, save_sample, batchSize, batchCount)
+        d = MainWindow(size.width(), size.height(), None, inpaint)
+        d.applyArgs(args)
+        d.show()
+        app.exec_()
+        sys.exit()
     else:
-        sample_fn = createSampleFunction(None, None, args.text)
+        sample_fn = createSampleFunction(None, None, args.text, args.batch_size)
         def save_sample(i, sample, clip_score=False):
             for k, image in enumerate(sample['pred_xstart'][:args.batch_size]):
                 image /= 0.18215

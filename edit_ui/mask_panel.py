@@ -6,7 +6,7 @@ from PyQt5.QtCore import Qt
 from edit_ui.mask_creator import MaskCreator
 
 class MaskPanel(QWidget):
-    def __init__(self, im, getSelection):
+    def __init__(self, im, getSelection, selectionChangeSignal):
         super().__init__()
 
         self.maskCreator = MaskCreator(im)
@@ -17,11 +17,9 @@ class MaskPanel(QWidget):
         def applySelection():
             selection = getSelection()
             if selection is not None:
-                print('apply selection')
                 maskCreator.loadImage(selection)
-            else:
-                print('selection was None')
         self.selectMaskAreaButton.clicked.connect(applySelection)
+        selectionChangeSignal.connect(applySelection)
         
 
         self.clearMaskButton = QPushButton(self)

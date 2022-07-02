@@ -6,9 +6,49 @@ from PIL import Image
 from edit_ui.image_viewer import ImageViewer
 
 class ImagePanel(QWidget):
-    def __init__(self, im):
+    """
+    Shows the image being edited, along with associated UI elements.
+    ...
+    Attributes
+    ----------
+        imageViewer : ImageViewer
+            Main image editing widget
+        xCoordBox : QSpinBox
+            Connected to the selected inpaiting area's x-coordinate.
+        yCoordBox : QSpinBox
+            Connected to the selected inpaiting area's y-coordinate.
+        fileTextBox : QLineEdit
+            Gets/sets the edited image's file path.
+        fileSelectButton : QPushButton
+            Opens a file selection dialog to load a new image.
+        imagReloadButton : QPushButton
+            (Re)loads the image from the path in the fileTextBox.
+    """
+
+    def __init__(self,
+            pilImage=None,
+            borderSize=4,
+            selectionWidth=256,
+            selectionHeight=256):
+        """
+        Parameters
+        ----------
+        pilImage : Image, optional
+            An initial pillow Image object to load.
+        borderSize : int, optional
+            Width in pixels of the border around the image.
+        selectionWidth : int, optional
+            Width in pixels of selected image sections used for inpainting.
+            Values greater than 256 will probably not work well.
+        selectionHeight : int, optional
+            Height in pixels of selected image sections used for inpainting.
+            Values greater than 256 will probably not work well.
+        """
         super().__init__()
-        self.imageViewer = ImageViewer(im)
+        self.imageViewer = ImageViewer(pilImage,
+                borderSize,
+                selectionWidth,
+                selectionHeight)
         imageViewer = self.imageViewer
 
         # wire x/y coordinate boxes to set selection coordinates:
@@ -31,17 +71,19 @@ class ImagePanel(QWidget):
         def setCoords(pt):
             self.xCoordBox.setValue(pt.x())
             self.yCoordBox.setValue(pt.y())
-        self.imageViewer.onSelect = setCoords
+        self.imageViewer.onSelection.connect(setCoords)
 
         self.fileTextBox = QLineEdit("Image Path goes here", self)
 
         def loadImage(filePath):
             try:
                 image = Image.open(open(filePath, 'rb')).convert('RGB')
-                self.imageViewer.loadImage(image)
+                self.imageViewer.setImage(image)
                 self.fileTextBox.setText(filePath)
-                self.xCoordBox.setRange(0, max(image.width - 256, 0))
-                self.yCoordBox.setRange(0, max(image.height - 256, 0))
+                self.xCoordBox.setRange(0, max(
+                            image.width - self.imageViewer.selectionWidth, 0))
+                self.yCoordBox.setRange(0, max(
+                            image.height - self.imageViewer.selectionHeight, 0))
             except Exception as err:
                 print(f"Failed to load image from '{filePath}': {err}")
 
@@ -79,17 +121,8 @@ class ImagePanel(QWidget):
         self.layout.setColumnStretch(2, 255)
         self.setLayout(self.layout)
 
-
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.setPen(QPen(Qt.black, self.borderSize/2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setPen(QPen(Qt.black, self.borderSize/2, Qt.SolidLine,
+                    Qt.RoundCap, Qt.RoundJoin))
         painter.drawRect(1, 1, self.width() - 2, self.height() - 2)
-
-    def getImage(self):
-        if hasattr(self.imageViewer, 'qim'):
-            return self.imageViewer.qim
-        else:
-            return None
-
-    def getSelection(self):
-        return self.imageViewer.getSelection()

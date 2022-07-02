@@ -73,6 +73,8 @@ class MaskCreator(QtWidgets.QWidget):
             image.save(buffer, "PNG")
             pil_im = Image.open(io.BytesIO(buffer.data()))
             return pil_im
+        else:
+            print("Warning: no mask found")
 
     def resizeEvent(self, event):
         if hasattr(self, 'image'):

@@ -1,8 +1,9 @@
 from PyQt5.QtWidgets import *
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QObject, QThread, pyqtSignal
 from edit_ui.mask_panel import MaskPanel
 from edit_ui.image_panel import ImagePanel
 from edit_ui.inpainting_panel import InpaintingPanel
+from edit_ui.sample_selector import SampleSelector
 import PyQt5.QtGui as QtGui
 from PIL import Image
 
@@ -12,18 +13,51 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.imagePanel = ImagePanel(im)
-        self.maskPanel = MaskPanel(im, lambda: self.imagePanel.getSelection())
-        self.inpaintPanel = InpaintingPanel(
-                lambda sel, mask, txt, sz, ct: doInpaint(self, sel, mask, txt, sz, ct),\
-                lambda: self.imagePanel.getImage(), \
-                lambda: self.imagePanel.getSelection(), \
-                lambda: self.maskPanel.getMask())
-        def writeMaskIntoImage():
-            mask = self.maskPanel.getMask()
-            if mask is not None:
-                self.imagePanel.imageViewer.insertIntoSelection(mask)
-        self.inpaintPanel.saveButton.clicked.connect(writeMaskIntoImage)
+        self.maskPanel = MaskPanel(im,
+                lambda: self.imagePanel.imageViewer.getSelectedSection(),
+                self.imagePanel.imageViewer.onSelection)
 
+        def inpaintAndShowSamples(selection, mask, prompt, batchSize, batchCount):
+            def closeSampleSelector():
+                selector = self.centralWidget.currentWidget()
+                if selector is not self.mainWidget:
+                    self.centralWidget.setCurrentWidget(self.mainWidget)
+                    self.centralWidget.removeWidget(selector)
+                    self.update()
+            def selectSample(pilImage):
+                self.imagePanel.imageViewer.insertIntoSelection(pilImage)
+                closeSampleSelector()
+            def loadSamplePreview(img, y, x):
+                sampleSelector.loadSample(img, y, x)
+                self.update()
+            sampleSelector = SampleSelector(self.width(),
+                    self.height(),
+                    batchSize,
+                    batchCount,
+                    selectSample,
+                    closeSampleSelector)
+            self.centralWidget.addWidget(sampleSelector)
+            self.centralWidget.setCurrentWidget(sampleSelector)
+            self.update()
+            class InpaintThread(QObject):
+                finished = pyqtSignal()
+                def run(self):
+                    doInpaint(selection, mask, prompt, batchSize, batchCount,
+                            loadSamplePreview)
+                    self.finished.emit()
+            self.worker = InpaintThread()
+            self.thread = QThread()
+            self.thread.started.connect(self.worker.run)
+            self.worker.finished.connect(self.thread.quit)
+            self.worker.finished.connect(self.worker.deleteLater)
+            self.thread.finished.connect(self.thread.deleteLater)
+            self.thread.start()
+
+        self.inpaintPanel = InpaintingPanel(
+                inpaintAndShowSamples,
+                lambda: self.imagePanel.imageViewer.getImage(),
+                lambda: self.imagePanel.imageViewer.getSelectedSection(),
+                lambda: self.maskPanel.getMask())
 
         self.setGeometry(0, 0, width, height)
         self.layout = QGridLayout()
