@@ -55,7 +55,21 @@ python sample.py --init_image picture.jpg --skip_timesteps 10 --model_path finet
 
 
 # Editing images
-aka human guided diffusion. You can use inpainting to generate more complex prompts by progressively editing the image
+aka human guided diffusion. You can use inpainting to generate more complex prompts by progressively editing the image.
+
+## Using the editing interface:
+```
+# Note: some, but not all command line options are supported. Additional documentation will be posted later.
+python sample.py --model_path inpaint.pt --edit_ui
+```
+1. Use the "Select Image" button to choose an image for editing, then click within the image to choose a 256x256 section for inpainting.
+2. In the box on the right, draw over the areas within the selection where you want changes to be applied.
+3. Enter a text prompt in the box on the bottom left to guide the inpainting. Use the boxes to the right of the text prompt field to set how many images are generated per batch, and how many image batches are generated.
+4. Click "Start inpainting" to begin image generation. (batch size * batch count) inpainting samples will load within the window. Once all of them have finished loading, click one to apply it to the edited image, or click "Cancel" to discard all the inpainting samples.
+5. Once you've finished editing, use the "Save Image" button to save your changes.
+
+
+## Single edits (original editing mode):
 
 note: you can use > 256px but the model only sees 256x256 at a time, so ensure the inpaint area is smaller than that
 

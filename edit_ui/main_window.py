@@ -8,8 +8,21 @@ import PyQt5.QtGui as QtGui
 from PIL import Image
 
 class MainWindow(QMainWindow):
+    """Creates a user interface to simplify repeated inpainting operations on image sections."""
 
     def __init__(self, width, height, im, doInpaint):
+        """
+        Parameters:
+        -----------
+        width : int
+            Initial window width in pixels.
+        height : int
+            Initial window height in pixels
+        im : Image (optional)
+            Optional initial image to edit.
+        doInpaint : function(Image selection, Image mask, string prompt, int batchSize int, batchCount)
+            Function used to trigger inpainting on a selected area of the edited image.
+        """
         super().__init__()
 
         self.imagePanel = ImagePanel(im)
@@ -18,6 +31,16 @@ class MainWindow(QMainWindow):
                 self.imagePanel.imageViewer.onSelection)
 
         def inpaintAndShowSamples(selection, mask, prompt, batchSize, batchCount):
+            self.thread = QThread()
+            class InpaintThreadWorker(QObject):
+                finished = pyqtSignal()
+                shouldRedraw = pyqtSignal()
+                def run(self):
+                    doInpaint(selection, mask, prompt, batchSize, batchCount,
+                            loadSamplePreview)
+                    self.finished.emit()
+            self.worker = InpaintThreadWorker()
+
             def closeSampleSelector():
                 selector = self.centralWidget.currentWidget()
                 if selector is not self.mainWidget:
@@ -29,28 +52,22 @@ class MainWindow(QMainWindow):
                 closeSampleSelector()
             def loadSamplePreview(img, y, x):
                 sampleSelector.loadSample(img, y, x)
-                self.update()
-            sampleSelector = SampleSelector(self.width(),
-                    self.height(),
-                    batchSize,
+                self.worker.shouldRedraw.emit()
+                self.thread.usleep(10) # Briefly pausing the inpainting thread gives the UI thread a chance to redraw.
+
+            sampleSelector = SampleSelector(batchSize,
                     batchCount,
                     selectSample,
                     closeSampleSelector)
             self.centralWidget.addWidget(sampleSelector)
             self.centralWidget.setCurrentWidget(sampleSelector)
             self.update()
-            class InpaintThread(QObject):
-                finished = pyqtSignal()
-                def run(self):
-                    doInpaint(selection, mask, prompt, batchSize, batchCount,
-                            loadSamplePreview)
-                    self.finished.emit()
-            self.worker = InpaintThread()
-            self.thread = QThread()
+
+            self.worker.shouldRedraw.connect(lambda: sampleSelector.repaint())
             self.thread.started.connect(self.worker.run)
+            self.thread.finished.connect(self.thread.deleteLater)
             self.worker.finished.connect(self.thread.quit)
             self.worker.finished.connect(self.worker.deleteLater)
-            self.thread.finished.connect(self.thread.deleteLater)
             self.thread.start()
 
         self.inpaintPanel = InpaintingPanel(
@@ -77,6 +94,7 @@ class MainWindow(QMainWindow):
         self.centralWidget.setCurrentWidget(self.mainWidget)
 
     def applyArgs(self, args):
+        """Applies optional command line arguments to the UI."""
         if args.init_image:
             image = Image.open(open(args.init_image, 'rb')).convert('RGB')
             self.imagePanel.imageViewer.loadImage(image)
