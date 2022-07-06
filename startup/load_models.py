@@ -69,6 +69,7 @@ def loadModels( device,
         for param in model.parameters():
             param.requires_grad = value
     print(f"loaded and configured primary model from {model_path}")
+    model_state_dict = None
     gc.collect()
 
     # vae
@@ -87,6 +88,7 @@ def loadModels( device,
     bert.half().eval()
     set_requires_grad(bert, False)
     print(f"loaded and configured BERT model from {bert_path}")
+    sd = None
     gc.collect()
 
     # clip
