@@ -3,9 +3,10 @@ from torchvision import transforms
 from guided_diffusion.script_util import create_model_and_diffusion, model_and_diffusion_defaults
 from encoders.modules import BERTEmbedder
 import clip
+import gc
 
 def loadModels( device,
-        model_path="inpainting.pt",
+        model_path="inpaint.pt",
         bert_path="bert.pt",
         kl_path="kl-f8.pt",
         clip_model_name='ViT-L/14',
@@ -68,6 +69,7 @@ def loadModels( device,
         for param in model.parameters():
             param.requires_grad = value
     print(f"loaded and configured primary model from {model_path}")
+    gc.collect()
 
     # vae
     ldm = torch.load(kl_path, map_location="cpu")
@@ -76,6 +78,7 @@ def loadModels( device,
     ldm.requires_grad_(clip_guidance)
     set_requires_grad(ldm, clip_guidance)
     print(f"loaded and configured latent diffusion model from {kl_path}")
+    gc.collect()
 
     bert = BERTEmbedder(1280, 32)
     sd = torch.load(bert_path, map_location="cpu")
@@ -84,11 +87,13 @@ def loadModels( device,
     bert.half().eval()
     set_requires_grad(bert, False)
     print(f"loaded and configured BERT model from {bert_path}")
+    gc.collect()
 
     # clip
     clip_model, clip_preprocess = clip.load(clip_model_name, device=device, jit=False)
     clip_model.eval().requires_grad_(False)
     print(f"loaded and configured CLIP model from {clip_model_name}")
+    gc.collect()
 
     normalize = transforms.Normalize(mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])
     return model_params, model, diffusion, ldm, bert, clip_model, clip_preprocess, normalize
