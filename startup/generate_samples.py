@@ -14,6 +14,7 @@ def generateSamples(
         init_image=None,
         clip_score=False):
     """Given a sample generation function and a sample save function, start generating image samples."""
+    global cur_t # See note in create_sample_function.py
     if init_image:
         init = Image.open(init_image).convert('RGB')
         init = init.resize((int(width),  int(height)), Image.LANCZOS)

@@ -153,6 +153,10 @@ def createSampleFunction(
         eps = torch.cat([half_eps, half_eps], dim=0)
         return torch.cat([eps, rest], dim=1)
 
+    # cur_t gets updated by the image generation function that calls sample_fn to control how clip_guidance is
+    # applied. Defined as global because cond_fn and the image generation loop were originally in the same file.
+    # TODO: this is inelegant, find a better solution.
+    global cur_t
     cur_t = None
 
     def cond_fn(x, t, context=None, clip_embed=None, image_embed=None):

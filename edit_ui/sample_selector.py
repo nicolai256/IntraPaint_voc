@@ -70,20 +70,21 @@ class SampleSelector(QWidget):
         self._layout = QVBoxLayout()
         self._topBarLayout = QHBoxLayout()
         self._gridLayout = QGridLayout()
-        self._layout.addLayout(self._topBarLayout, 10)
-        self._layout.addLayout(self._gridLayout, 200)
+        self._layout.addLayout(self._topBarLayout, 1)
+        self._layout.addLayout(self._gridLayout, 255)
 
         self._topBarLayout.addWidget(instructions, 10)
         self._topBarLayout.addWidget(self._cancelButton, 1)
+        self._topBarLayout.setSpacing(max(2, self.height() // 30))
         for row in range(num_batches):
-            self._gridLayout.setRowMinimumHeight(row, min(256, self.height() / num_batches))
+            self._gridLayout.setRowMinimumHeight(row, (self.height() * 0.95) // num_batches)
         for column in range(batch_size):
-            self._gridLayout.setColumnMinimumWidth(column, min(256, self.width() / batch_size))
+            self._gridLayout.setColumnMinimumWidth(column, (self.width() * 0.95) // batch_size)
 
         for row in range(num_batches):
             for column in range(batch_size):
                 sampleWidget = SampleWidget()
-                sampleSize = min(self.width() / (batch_size + 1), self.height() / (num_batches + 1))
+                sampleSize = min(self.width() / batch_size, self.height() / num_batches)
                 sampleWidget.setMinimumSize(sampleSize, sampleSize)
                 self._gridLayout.addWidget(sampleWidget, row, column, 1, 1)
         self.setLayout(self._layout)
