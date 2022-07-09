@@ -268,7 +268,7 @@ if args.server_test:
     print('Testing backend server')
     from colab.server import startServer
     app = startServer(device, model_params, model, diffusion, ldm, bert, clip_model, clip_preprocess, normalize)
-    app.run(port=5555)
+    app.run(port=5555, host= '0.0.0.0')
 
 
 def do_run():
