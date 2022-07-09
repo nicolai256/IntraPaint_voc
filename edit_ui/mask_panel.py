@@ -53,7 +53,7 @@ class MaskPanel(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.setPen(QPen(Qt.black, self.borderSize/2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setPen(QPen(Qt.black, self.borderSize//2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         painter.drawRect(1, 1, self.width() - 2, self.height() - 2)
 
     def loadImage(self, im):
@@ -61,3 +61,16 @@ class MaskPanel(QWidget):
 
     def getMask(self):
         return self.maskCreator.getMask()
+
+    def resizeEvent(self, event):
+        # Force MaskCreator aspect ratio to match edit sizes, while leaving room for controls:
+        creatorWidth = self.maskCreator.width()
+        creatorHeight = creatorWidth * self.maskCreator._editHeight // self.maskCreator._editWidth
+        maxHeight = self.clearMaskButton.y() - self.borderSize
+        if creatorHeight > maxHeight:
+            creatorHeight = maxHeight
+            creatorWidth = creatorHeight * self.maskCreator._editWidth // self.maskCreator._editHeight
+        if creatorHeight != self.maskCreator.height() or creatorWidth != self.maskCreator.width():
+            x = (self.width() - self.borderSize - creatorWidth) // 2
+            y = self.borderSize + (maxHeight - creatorHeight) // 2
+            self.maskCreator.setGeometry(x, y, creatorWidth, creatorHeight)

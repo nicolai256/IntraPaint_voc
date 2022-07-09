@@ -120,19 +120,19 @@ class ImageViewer(QtWidgets.QWidget):
             return qImageToImage(croppedImage)
 
     def _imageToWidgetCoords(self, point):
-        return QPoint((point.x() * self._scale) + self._xMin,
-                (point.y() * self._scale) + self._yMin)
+        return QPoint(int(point.x() * self._scale) + self._xMin,
+                int(point.y() * self._scale) + self._yMin)
 
     def _widgetToImageCoords(self, point):
-        return QPoint((point.x() - self._xMin) / self._scale,
-                (point.y() - self._yMin) / self._scale)
+        return QPoint(int((point.x() - self._xMin) / self._scale),
+                int((point.y() - self._yMin) / self._scale))
 
     def paintEvent(self, event):
         if not hasattr(self, '_qimage'):
             return
         painter = QPainter(self)
-        left = (self.width() - self._pixmap.width()) / 2
-        top = (self.height() - self._pixmap.height()) / 2
+        left = (self.width() - self._pixmap.width()) // 2
+        top = (self.height() - self._pixmap.height()) // 2
         painter.drawPixmap(QRect(left, top, self._pixmap.width(), self._pixmap.height()), self._pixmap)
 
         painter.setPen(QPen(Qt.black, self._borderSize, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
@@ -143,8 +143,8 @@ class ImageViewer(QtWidgets.QWidget):
             painter.drawRect(
                     widgetCoords.x(),
                     widgetCoords.y(),
-                    self.selectionWidth * self._scale,
-                    self.selectionHeight * self._scale) 
+                    int(self.selectionWidth * self._scale),
+                    int(self.selectionHeight * self._scale)) 
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton and hasattr(self, '_qimage'):
@@ -163,7 +163,7 @@ class ImageViewer(QtWidgets.QWidget):
                 self._borderSize)
         self._xMin = imagePt.x()
         self._yMin = imagePt.y()
-        self._xMax = self._xMin + (imageWidth * self._scale)
-        self._yMax = self._yMin + (imageHeight * self._scale)
+        self._xMax = self._xMin + int(imageWidth * self._scale)
+        self._yMax = self._yMin + int(imageHeight * self._scale)
         self._pixmap = QtGui.QPixmap.fromImage(self._qimage)
-        self._pixmap = self._pixmap.scaled(imageWidth * self._scale, imageHeight * self._scale)
+        self._pixmap = self._pixmap.scaled(int(imageWidth * self._scale), int(imageHeight * self._scale))

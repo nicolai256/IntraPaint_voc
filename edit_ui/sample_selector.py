@@ -30,15 +30,15 @@ class SampleWidget(QPushButton):
     def paintEvent(self, event):
         painter = QPainter(self)
         minDim = min(self.width(), self.height())
-        left = (self.width() - minDim) / 2
-        top = (self.height() - minDim) / 2
+        left = (self.width() - minDim) // 2
+        top = (self.height() - minDim) // 2
         if self._pixmap is not None:
             painter.drawPixmap(QRect(left, top, minDim, minDim), self._pixmap)
         else: #Draw loading placeholder
             painter.setPen(QPen(Qt.black, 4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
             painter.fillRect(left, top, minDim, minDim, Qt.black)
             painter.setPen(QPen(Qt.white, 4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-            painter.drawText(left + (minDim / 10), self.height() / 2, "Loading...")
+            painter.drawText(left + (minDim // 10), self.height() // 2, "Loading...")
 
 class SampleSelector(QWidget):
     """Shows all inpainting samples as they load, allows the user to select one or discard all of them."""
@@ -77,14 +77,14 @@ class SampleSelector(QWidget):
         self._topBarLayout.addWidget(self._cancelButton, 1)
         self._topBarLayout.setSpacing(max(2, self.height() // 30))
         for row in range(num_batches):
-            self._gridLayout.setRowMinimumHeight(row, (self.height() * 0.95) // num_batches)
+            self._gridLayout.setRowMinimumHeight(row, int(self.height() * 0.95) // num_batches)
         for column in range(batch_size):
-            self._gridLayout.setColumnMinimumWidth(column, (self.width() * 0.95) // batch_size)
+            self._gridLayout.setColumnMinimumWidth(column, int(self.width() * 0.95) // batch_size)
 
         for row in range(num_batches):
             for column in range(batch_size):
                 sampleWidget = SampleWidget()
-                sampleSize = min(self.width() / batch_size, self.height() / num_batches)
+                sampleSize = min(self.width() // batch_size, self.height() // num_batches)
                 sampleWidget.setMinimumSize(sampleSize, sampleSize)
                 self._gridLayout.addWidget(sampleWidget, row, column, 1, 1)
         self.setLayout(self._layout)
@@ -112,8 +112,8 @@ class SampleSelector(QWidget):
             sampleWidget.clicked.connect(selectOnClick)
 
     def resizeEvent(self, event):
-        sampleSize = min(self.width() / (self._nColumns + 2),
-                self.height() / (self._nRows + 2))
+        sampleSize = min(self.width() // (self._nColumns + 2),
+                self.height() // (self._nRows + 2))
         for row in range(self._nRows):
             for col in range(self._nColumns):
                 sampleWidget = self._gridLayout.itemAtPosition(row, col)

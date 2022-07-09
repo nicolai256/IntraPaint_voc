@@ -1,5 +1,6 @@
 from PyQt5.QtWidgets import *
-from PyQt5.QtCore import Qt, QObject, QThread, pyqtSignal
+from PyQt5.QtGui import QPainter, QPen
+from PyQt5.QtCore import Qt, QObject, QThread, QRect, QPoint, pyqtSignal
 from edit_ui.mask_panel import MaskPanel
 from edit_ui.image_panel import ImagePanel
 from edit_ui.inpainting_panel import InpaintingPanel
@@ -29,6 +30,7 @@ class MainWindow(QMainWindow):
         self.maskPanel = MaskPanel(im,
                 lambda: self.imagePanel.imageViewer.getSelectedSection(),
                 self.imagePanel.imageViewer.onSelection)
+        self._draggingDivider = False
 
         def inpaintAndShowSamples(selection, mask, prompt, batchSize, batchCount):
             self.thread = QThread()
@@ -85,12 +87,13 @@ class MainWindow(QMainWindow):
         self.setGeometry(0, 0, width, height)
         self.layout = QGridLayout()
         self.layout.addWidget(self.imagePanel, 0, 0, 1, 1)
-        self.layout.addWidget(self.maskPanel, 0, 1, 1, 1)
+        self.layout.addWidget(self.maskPanel, 0, 2, 1, 1)
         self.layout.addWidget(self.inpaintPanel, 2, 0, 1, 2)
         self.layout.setRowStretch(0, 100)
-        self.layout.setColumnStretch(0, 255)
-        self.layout.setColumnStretch(1, 55)
-        self.layout.setColumnMinimumWidth(1, 300)
+        self.layout.setColumnStretch(0, 250)
+        self.layout.setColumnStretch(1, 5)
+        self.layout.setColumnStretch(2, 50)
+        self.layout.setColumnMinimumWidth(2, 300)
         self.mainWidget = QWidget(self);
         self.mainWidget.setLayout(self.layout)
 
@@ -114,3 +117,49 @@ class MainWindow(QMainWindow):
 
     def getMask(self):
         return self.maskPanel.getMask()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        color = Qt.green if self._draggingDivider else Qt.black
+        size = 4 if self._draggingDivider else 2
+        painter.setPen(QPen(color, size, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        dividerBox = self._dividerCoords()
+        yMid = dividerBox.y() + (dividerBox.height() // 2)
+        midLeft = QPoint(dividerBox.x(), yMid)
+        midRight = QPoint(dividerBox.right(), yMid)
+        arrowWidth = dividerBox.width() // 4
+        # Draw arrows:
+        painter.drawLine(midLeft, midRight)
+        painter.drawLine(midLeft, dividerBox.topLeft() + QPoint(arrowWidth, 0))
+        painter.drawLine(midLeft, dividerBox.bottomLeft() + QPoint(arrowWidth, 0))
+        painter.drawLine(midRight, dividerBox.topRight() - QPoint(arrowWidth, 0))
+        painter.drawLine(midRight, dividerBox.bottomRight() - QPoint(arrowWidth, 0))
+
+    def _dividerCoords(self):
+        imageRight = self.imagePanel.x() + self.imagePanel.width()
+        maskLeft = self.maskPanel.x()
+        width = (maskLeft - imageRight) // 2
+        height = width // 2
+        x = imageRight + (width // 2)
+        y = self.imagePanel.y() + (self.imagePanel.height() // 2) - (height // 2)
+        return QRect(x, y, width, height)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and self._dividerCoords().contains(event.pos()):
+            self._draggingDivider = True
+            self.update()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() and Qt.LeftButton and self._draggingDivider:
+            x = event.pos().x()
+            imgWeight = int(x / self.width() * 300)
+            maskWeight = 300 - imgWeight
+            self.layout.setColumnStretch(0, imgWeight)
+            self.layout.setColumnStretch(2, maskWeight)
+            self.update()
+
+    def mouseReleaseEvent(self, event):
+        if self._draggingDivider:
+            self._draggingDivider = False
+            self.update()

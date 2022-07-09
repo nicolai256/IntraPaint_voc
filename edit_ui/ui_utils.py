@@ -45,4 +45,4 @@ def getScaledPlacement(containerSize, innerSize, marginWidth=0):
     for i in [0, 1]:
         if (innerSize[i] * scale) < containerSize[i]:
             coords[i] = marginWidth + (containerSize[i] - (innerSize[i] * scale)) / 2
-    return QPoint(coords[0], coords[1]), scale
+    return QPoint(int(coords[0]), int(coords[1])), scale

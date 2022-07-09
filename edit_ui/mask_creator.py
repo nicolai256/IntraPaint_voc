@@ -65,8 +65,8 @@ class MaskCreator(QtWidgets.QWidget):
         painter.drawRect(
                 max(self._imagePt.x() - self._borderSize, 0),
                 max(self._imagePt.y() - self._borderSize, 0),
-                self._editWidth * self._scale + self._borderSize * 2,
-                self._editHeight * self._scale + self._borderSize * 2)
+                int(self._editWidth * self._scale + self._borderSize * 2),
+                int(self._editHeight * self._scale + self._borderSize * 2))
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -96,8 +96,8 @@ class MaskCreator(QtWidgets.QWidget):
                 [self.width(), self.height()],
                 [self._editWidth, self._editHeight],
                 self._borderSize)
-        width = self._editWidth * self._scale
-        height = self._editHeight * self._scale
+        width = int(self._editWidth * self._scale)
+        height = int(self._editHeight * self._scale)
         if hasattr(self, '_pixmap'):
             self._pixmap = self._pixmap.scaled(width, height)
         self._canvas = self._canvas.scaled(width, height)
