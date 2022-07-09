@@ -1,18 +1,5 @@
-import gc
-import sys
 import argparse
-import os
-
-from PIL import Image
-import torch
-from torchvision.transforms import functional as TF
-import numpy as np
-
-from startup.utils import *
-from startup.load_models import loadModels
-from startup.create_sample_function import createSampleFunction
-from startup.generate_samples import generateSamples
-
+import sys
 
 # argument parsing:
 parser = argparse.ArgumentParser()
@@ -101,15 +88,129 @@ parser.add_argument('--edit_ui', dest='edit_ui', action='store_true') # Use exte
 parser.add_argument('--ui_test', dest='ui_test', action='store_true') # Test UI without loading real functionality
 parser.add_argument('--server_test', dest='server_test', action='store_true') # Test backend colab server
 
+# Start inpainting UI in client mode:
+parser.add_argument('--inpainting_client', dest='inpainting_client', action='store_true',
+                    help='Run inpainting UI only, forwarding image generation tasks to a server')
+parser.add_argument('--server_url', type = str, required = False, default = '',
+                    help='Server URL, used only when running in client mode')
+
 args = parser.parse_args()
 
 if args.edit and not args.mask:
     from edit_ui.quickedit_window import QuickEditWindow
-elif args.ui_test or args.edit_ui:
+elif args.ui_test or args.edit_ui or args.inpainting_client:
     from PyQt5.QtWidgets import QApplication
     from edit_ui.main_window import MainWindow
     from edit_ui.sample_selector import SampleSelector
 
+if args.inpainting_client:
+    from PyQt5 import QtCore
+    from PyQt5.QtWidgets import QInputDialog
+    import requests
+    import base64
+    from PIL import Image
+    import io
+    print('Testing client/server mode:')
+    app = QApplication(sys.argv)
+    screen = app.primaryScreen()
+    size = screen.availableGeometry()
+    global window
+    def inpaint(selection, mask, prompt, batchSize, batchCount, showSample):
+        def imageToBase64(pilImage):
+            buffer = io.BytesIO()
+            pilImage.save(buffer, format='PNG')
+            return str(base64.b64encode(buffer.getvalue()), 'utf-8')
+        body = {
+            'batch_size': batchSize,
+            'num_batches': batchCount,
+            'edit': imageToBase64(selection),
+            'mask': imageToBase64(mask),
+            'prompt': prompt
+        }
+
+        def errorCheck(serverResponse, contextStr):
+            if serverResponse.status_code != 200:
+                if serverResponse.content and ('application/json' in serverResponse.headers['content-type']) \
+                        and serverResponse.json() and 'error' in serverResponse.json():
+                    raise Exception(f"{serverResponse.status_code} response to {contextStr}: {serverResponse.json()['error']}")
+                else:
+                    print("RES")
+                    print(serverResponse.content)
+                    raise Exception(f"{serverResponse.status_code} response to {contextStr}: unknown error")
+        res = requests.post(args.server_url, json=body, timeout=5)
+        errorCheck(res, 'New inpainting request')
+            
+        # POST to args.server_url, check response
+        # If invalid or error response, throw Exception
+        samples = {}
+        in_progress = True
+        errorCount = 0
+        while in_progress:
+            QtCore.QThread.usleep(300) # Sleep 300ms
+            # GET server_url/sample, sending previous samples:
+            res = None
+            try:
+                res = requests.get(f'{args.server_url}/sample', json={'samples': samples}, timeout=5)
+                errorCheck(res, 'sample update request')
+            except Exception as err:
+                errorCount += 1
+                print(f'Error {errorCount}: {err}')
+                if errorCount > 10:
+                    print('Inpainting failed, reached max retries.')
+                    break
+                else:
+                    continue
+
+
+            # On valid response, for each entry in res.json.sample:
+            jsonBody = res.json()
+            if 'samples' not in jsonBody:
+                continue
+            for sampleName in jsonBody['samples'].keys():
+                # GET sample image from server_url/sample/id
+                sampleRes = requests.get(f'{args.server_url}/sample/{sampleName}', timeout=5)
+                sampleImage = None
+                try:
+                    errorCheck(sampleRes, f'sample download request for {sampleName}')
+                    sampleImage = Image.open(io.BytesIO(sampleRes.content))
+                    idx = int(sampleName) % batchSize
+                    batch = int(sampleName) // batchSize
+                    showSample(sampleImage, idx, batch)
+                    samples[sampleName] = jsonBody['samples'][sampleName]
+                except Exception as err:
+                    print(f'Warning: {err}')
+                    errorCount += 1
+                    continue
+            in_progress = jsonBody['in_progress']
+
+    window = MainWindow(size.width(), size.height(), None, inpaint)
+    window.applyArgs(args)
+    window.show()
+
+    def promptForURL(promptText):
+        newUrl = QInputDialog.getText(window, 'Inpainting UI', promptText)
+        if newUrl[1] == False: # User clicked 'Cancel'
+            sys.exit()
+        if newUrl[0] != '':
+            args.server_url=newUrl[0]
+
+    # Get URL if one was not provided on the command line:
+    while args.server_url == '':
+        promptForURL('Enter server URL:')
+
+    # Check connection:
+    def healthCheckPasses():
+        try:
+            res = requests.get(args.server_url, timeout=1)
+            return res.status_code == 200 and ('application/json' in res.headers['content-type']) \
+                and 'success' in res.json() and res.json()['success'] == True
+        except Exception as err:
+            print(f"error connecting to {args.server_url}: {err}")
+            return False
+    while not healthCheckPasses():
+        promptForURL('Server connection failed, enter a new URL or click "OK" to retry')
+    app.exec_()
+    sys.exit()
 
 if args.ui_test:
     print('Testing expanded inpainting UI')
@@ -131,6 +232,21 @@ if args.ui_test:
     d.show()
     app.exec_()
     sys.exit()
+
+
+import gc
+import os
+
+from PIL import Image
+import torch
+from torchvision.transforms import functional as TF
+import numpy as np
+
+from startup.utils import *
+from startup.load_models import loadModels
+from startup.create_sample_function import createSampleFunction
+from startup.generate_samples import generateSamples
+
 
 
 device = torch.device('cuda:0' if (torch.cuda.is_available() and not args.cpu) else 'cpu')
@@ -172,11 +288,12 @@ def do_run():
                     clip_model,
                     ldm,
                     diffusion,
-                    image=selection,
+                    normalize,
+                    image=None,
                     mask=mask,
                     prompt=prompt,
                     batch_size=batchSize,
-                    edit=True,
+                    edit=selection,
                     width=args.width,
                     height=args.height,
                     edit_width=args.edit_width,
@@ -208,6 +325,7 @@ def do_run():
                 clip_model,
                 ldm,
                 diffusion,
+                normalize,
                 mask=args.mask,
                 prompt=args.text,
                 negative=args.negative,

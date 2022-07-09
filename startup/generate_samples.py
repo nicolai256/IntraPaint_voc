@@ -14,7 +14,6 @@ def generateSamples(
         init_image=None,
         clip_score=False):
     """Given a sample generation function and a sample save function, start generating image samples."""
-    global cur_t # See note in create_sample_function.py
     if init_image:
         init = Image.open(init_image).convert('RGB')
         init = init.resize((int(width),  int(height)), Image.LANCZOS)
@@ -24,10 +23,8 @@ def generateSamples(
     else:
         init = None
     for i in range(num_batches):
-        cur_t = diffusion.num_timesteps - 1
         samples = sample_fn(init)
         for j, sample in enumerate(samples):
-            cur_t -= 1
             if j % 5 == 0 and j != diffusion.num_timesteps - 1:
                 save_sample(i, sample)
         save_sample(i, sample, clip_score)

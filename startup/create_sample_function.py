@@ -17,6 +17,7 @@ def createSampleFunction(
         clip_model,
         ldm_model,
         diffusion,
+        normalize,
         image=None,
         mask=None,
         prompt="",
@@ -64,9 +65,9 @@ def createSampleFunction(
         input_image = torch.zeros(1, 4, height//8, width//8, device=device)
         input_image_pil = None
         np_image = None
-        if isinstance(image, Image.Image):
+        if isinstance(edit, Image.Image):
             input_image = torch.zeros(1, 4, height//8, width//8, device=device)
-            input_image_pil = image
+            input_image_pil = edit
         elif isinstance(edit, str) and edit.endswith('.npy'):
             with open(edit, 'rb') as f:
                 np_image = np.load(f)
@@ -153,14 +154,9 @@ def createSampleFunction(
         eps = torch.cat([half_eps, half_eps], dim=0)
         return torch.cat([eps, rest], dim=1)
 
-    # cur_t gets updated by the image generation function that calls sample_fn to control how clip_guidance is
-    # applied. Defined as global because cond_fn and the image generation loop were originally in the same file.
-    # TODO: this is inelegant, find a better solution.
-    global cur_t
-    cur_t = None
-
     def cond_fn(x, t, context=None, clip_embed=None, image_embed=None):
         with torch.enable_grad():
+            cur_t = diffusion.num_timesteps - 1
             x = x[:batch_size].detach().requires_grad_()
 
             n = x.shape[0]
@@ -180,7 +176,7 @@ def createSampleFunction(
 
             x_in /= 0.18215
 
-            x_img = ldm.decode(x_in)
+            x_img = ldm_model.decode(x_in)
 
             clip_in = normalize(make_cutouts(x_img.add(1).div(2)))
             clip_embeds = clip_model.encode_image(clip_in).float()
