@@ -31,9 +31,12 @@ class InpaintingPanel(QWidget):
         def saveImage():
             file = QFileDialog.getSaveFileName(self, 'Save Image')
             image = getImage()
-            if file and (image is not None):
-                file = file[0]
-                image.save(file, "PNG")
+            try:
+                if file and file[1] and (image is not None):
+                    file = file[0]
+                    image.save(file, "PNG")
+            except Exception as err:
+                print(f"Saving image failed: {err}")
         self.saveButton = QPushButton(self)
         self.saveButton.clicked.connect(saveImage)
         self.saveButton.setText("Save Image")

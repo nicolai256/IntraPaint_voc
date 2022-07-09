@@ -5,7 +5,7 @@ from edit_ui.image_panel import ImagePanel
 from edit_ui.inpainting_panel import InpaintingPanel
 from edit_ui.sample_selector import SampleSelector
 import PyQt5.QtGui as QtGui
-from PIL import Image
+from PIL import Image, ImageFilter
 
 class MainWindow(QMainWindow):
     """Creates a user interface to simplify repeated inpainting operations on image sections."""
@@ -51,7 +51,13 @@ class MainWindow(QMainWindow):
                 self.imagePanel.imageViewer.insertIntoSelection(pilImage)
                 closeSampleSelector()
             def loadSamplePreview(img, y, x):
-                sampleSelector.loadSample(img, y, x)
+                # Inpainting can create subtle changes outside the mask area, which can gradually impact image quality
+                # and create annoying lines in larger images. To fix this, apply the mask to the resulting sample, and
+                # re-combine it with the original image. In addition, blur the mask slightly to improve image composite
+                # quality.
+                maskAlpha = mask.convert('L').point( lambda p: 255 if p < 1 else 0 ).filter(ImageFilter.GaussianBlur())
+                cleanImage = Image.composite(selection, img, maskAlpha)
+                sampleSelector.loadSample(cleanImage, y, x)
                 self.worker.shouldRedraw.emit()
                 self.thread.usleep(10) # Briefly pausing the inpainting thread gives the UI thread a chance to redraw.
 

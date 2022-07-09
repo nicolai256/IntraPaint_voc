@@ -17,6 +17,8 @@ class MaskCreator(QtWidgets.QWidget):
             Clear the user-drawn image mask.
         loadImage : None
             Load a new image section for inpainting.
+        setUseEraser : None
+            Sets whether drawing should add to the mask, or remove from it.
     """
 
     def __init__(self, pilImage, editWidth=256, editHeight=256, borderSize=6):
@@ -27,6 +29,7 @@ class MaskCreator(QtWidgets.QWidget):
         self._borderSize = borderSize
         self._editWidth=256
         self._editHeight=256
+        self._useEraser=False
         canvasImage = QtGui.QImage(editWidth, editHeight, QtGui.QImage.Format_ARGB32)
         self._canvas = QtGui.QPixmap.fromImage(canvasImage)
         self._canvas.fill(Qt.transparent)
@@ -35,6 +38,9 @@ class MaskCreator(QtWidgets.QWidget):
 
     def setBrushSize(self, newSize):
         self._brushSize = newSize
+
+    def setUseEraser(self, useEraser):
+        self._useEraser = useEraser
 
     def getBrushSize(self):
         return self._brushSize
@@ -70,6 +76,8 @@ class MaskCreator(QtWidgets.QWidget):
     def mouseMoveEvent(self, event):
         if event.buttons() and Qt.LeftButton and self.drawing and hasattr(self, '_canvas'):
             painter = QPainter(self._canvas)
+            if self._useEraser:
+                painter.setCompositionMode(QPainter.CompositionMode_Clear)
             painter.setPen(QPen(Qt.red, self._brushSize, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
             painter.drawLine(self._lastPoint, event.pos() - self._imagePt)
             self._lastPoint = event.pos() - self._imagePt

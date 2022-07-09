@@ -10,17 +10,14 @@ class MaskPanel(QWidget):
         super().__init__()
 
         self.maskCreator = MaskCreator(im)
-        maskCreator = self.maskCreator
 
-        self.selectMaskAreaButton = QPushButton(self)
-        self.selectMaskAreaButton.setText("load selection")
+        maskCreator = self.maskCreator
         def applySelection():
             selection = getSelection()
             if selection is not None:
                 maskCreator.loadImage(selection)
-        self.selectMaskAreaButton.clicked.connect(applySelection)
         selectionChangeSignal.connect(applySelection)
-        
+
 
         self.clearMaskButton = QPushButton(self)
         self.clearMaskButton.setText("clear")
@@ -31,7 +28,13 @@ class MaskPanel(QWidget):
         self.maskBrushSizeBox.setRange(1, 64)
         self.maskBrushSizeBox.setValue(maskCreator.getBrushSize())
         self.maskBrushSizeBox.valueChanged.connect(lambda newSize: maskCreator.setBrushSize(newSize))
-        
+
+        self.eraserCheckbox = QCheckBox(self)
+        self.eraserCheckbox.setText("Use eraser")
+        self.eraserCheckbox.setChecked(False)
+        def toggleEraser():
+            self.maskCreator.setUseEraser(self.eraserCheckbox.isChecked())
+        self.eraserCheckbox.stateChanged.connect(toggleEraser)
 
         self.layout = QGridLayout()
         self.borderSize = 4
@@ -42,9 +45,9 @@ class MaskPanel(QWidget):
         self.layout.addItem(makeSpacer(), 0, 0, 1, 1)
         self.layout.addItem(makeSpacer(), 0, 6, 1, 1)
         self.layout.addWidget(self.maskCreator, 1, 1, 1, 6)
-        self.layout.addWidget(self.selectMaskAreaButton, 2, 1, 1, 2)
-        self.layout.addWidget(self.clearMaskButton, 2, 3, 1, 2)
-        self.layout.addWidget(self.maskBrushSizeBox, 2, 5, 1, 2)
+        self.layout.addWidget(self.clearMaskButton, 2, 1, 1, 2)
+        self.layout.addWidget(self.maskBrushSizeBox, 2, 3, 1, 2)
+        self.layout.addWidget(self.eraserCheckbox, 2, 5, 1, 2)
         self.layout.setRowMinimumHeight(1, 300)
         self.setLayout(self.layout)
 
