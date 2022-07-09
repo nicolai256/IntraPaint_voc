@@ -93,6 +93,8 @@ parser.add_argument('--inpainting_client', dest='inpainting_client', action='sto
                     help='Run inpainting UI only, forwarding image generation tasks to a server')
 parser.add_argument('--server_url', type = str, required = False, default = '',
                     help='Server URL, used only when running in client mode')
+parser.add_argument('--fast_ngrok_connection', type = str, required = False, default = '',
+                    help='If true, connection rates will not be limited when using ngrok. You should only use this if you have a paid ngrok account')
 
 args = parser.parse_args()
 
@@ -145,8 +147,18 @@ if args.inpainting_client:
         samples = {}
         in_progress = True
         errorCount = 0
+        maxErrors = 10
+        # refresh times in microseconds:
+        minRefresh = 300000
+        maxRefresh = 60000000
+        if('.ngrok.io' in args.server_url and not args.fast_ngrok_connection):
+            # Free ngrok accounts only allow 20 connections per minute, lower the refresh rate to avoid failures:
+            minRefresh = 3000000
+
         while in_progress:
-            QtCore.QThread.usleep(300) # Sleep 300ms
+            sleepTime = min(minRefresh * pow(2, errorCount), maxRefresh)
+            print(f"Checking for response in {sleepTime//1000} ms...")
+            QtCore.QThread.usleep(sleepTime)
             # GET server_url/sample, sending previous samples:
             res = None
             try:
@@ -155,11 +167,12 @@ if args.inpainting_client:
             except Exception as err:
                 errorCount += 1
                 print(f'Error {errorCount}: {err}')
-                if errorCount > 10:
+                if errorCount > maxErrors:
                     print('Inpainting failed, reached max retries.')
                     break
                 else:
                     continue
+            errorCount = 0 # Reset error count on success.
 
 
             # On valid response, for each entry in res.json.sample:

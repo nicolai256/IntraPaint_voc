@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import *
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QMargins
 import PyQt5.QtGui as QtGui
-from PyQt5.QtGui import QPainter, QPen
+from PyQt5.QtGui import QPainter, QPen, QColor
 from PyQt5.QtCore import Qt, QPoint, QRect, QBuffer
 
 
@@ -39,6 +39,19 @@ class SampleWidget(QPushButton):
             painter.fillRect(left, top, minDim, minDim, Qt.black)
             painter.setPen(QPen(Qt.white, 4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
             painter.drawText(left + (minDim // 10), self.height() // 2, "Loading...")
+
+class LoadingWidget(QWidget):
+    """Show a loading indicator while waiting for samples to load:"""
+    def __init__(self):
+        super().__init__()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        margins = QMargins(self.width() // 3, self.height() // 3, self.width() // 3, self.height() // 3)
+        loadingBox = self.frameGeometry().marginsRemoved(margins)
+        painter.fillRect(loadingBox, QColor(0, 0, 0, 200))
+        painter.setPen(QPen(Qt.white, 4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.drawText(self.width() // 2 - 20, self.height() // 2, "Loading...")
 
 class SampleSelector(QWidget):
     """Shows all inpainting samples as they load, allows the user to select one or discard all of them."""
@@ -89,6 +102,19 @@ class SampleSelector(QWidget):
                 self._gridLayout.addWidget(sampleWidget, row, column, 1, 1)
         self.setLayout(self._layout)
 
+        self._loadingWidget = LoadingWidget()
+        self._loadingWidget.setParent(self)
+        self._loadingWidget.setGeometry(self.frameGeometry())
+        self._loadingWidget.hide()
+
+    def setIsLoading(self, isLoading):
+        """Show or hide the loading indicator"""
+        if isLoading:
+            self._loadingWidget.show()
+        else:
+            self._loadingWidget.hide()
+        self.update()
+
     def loadSample(self, imageSample, idx, batch):
         """
         Loads an inpainting sample image into the appropriate SampleWidget.
@@ -112,6 +138,7 @@ class SampleSelector(QWidget):
             sampleWidget.clicked.connect(selectOnClick)
 
     def resizeEvent(self, event):
+        self._loadingWidget.setGeometry(self.frameGeometry())
         sampleSize = min(self.width() // (self._nColumns + 2),
                 self.height() // (self._nRows + 2))
         for row in range(self._nRows):

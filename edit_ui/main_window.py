@@ -69,9 +69,11 @@ class MainWindow(QMainWindow):
                     closeSampleSelector)
             self.centralWidget.addWidget(sampleSelector)
             self.centralWidget.setCurrentWidget(sampleSelector)
+            sampleSelector.setIsLoading(True)
             self.update()
 
             self.worker.shouldRedraw.connect(lambda: sampleSelector.repaint())
+            self.worker.finished.connect(lambda: sampleSelector.setIsLoading(False))
             self.thread.started.connect(self.worker.run)
             self.thread.finished.connect(self.thread.deleteLater)
             self.worker.finished.connect(self.thread.quit)
@@ -120,21 +122,22 @@ class MainWindow(QMainWindow):
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        painter = QPainter(self)
-        color = Qt.green if self._draggingDivider else Qt.black
-        size = 4 if self._draggingDivider else 2
-        painter.setPen(QPen(color, size, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-        dividerBox = self._dividerCoords()
-        yMid = dividerBox.y() + (dividerBox.height() // 2)
-        midLeft = QPoint(dividerBox.x(), yMid)
-        midRight = QPoint(dividerBox.right(), yMid)
-        arrowWidth = dividerBox.width() // 4
-        # Draw arrows:
-        painter.drawLine(midLeft, midRight)
-        painter.drawLine(midLeft, dividerBox.topLeft() + QPoint(arrowWidth, 0))
-        painter.drawLine(midLeft, dividerBox.bottomLeft() + QPoint(arrowWidth, 0))
-        painter.drawLine(midRight, dividerBox.topRight() - QPoint(arrowWidth, 0))
-        painter.drawLine(midRight, dividerBox.bottomRight() - QPoint(arrowWidth, 0))
+        if self.centralWidget.currentWidget() is self.mainWidget:
+            painter = QPainter(self)
+            color = Qt.green if self._draggingDivider else Qt.black
+            size = 4 if self._draggingDivider else 2
+            painter.setPen(QPen(color, size, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            dividerBox = self._dividerCoords()
+            yMid = dividerBox.y() + (dividerBox.height() // 2)
+            midLeft = QPoint(dividerBox.x(), yMid)
+            midRight = QPoint(dividerBox.right(), yMid)
+            arrowWidth = dividerBox.width() // 4
+            # Draw arrows:
+            painter.drawLine(midLeft, midRight)
+            painter.drawLine(midLeft, dividerBox.topLeft() + QPoint(arrowWidth, 0))
+            painter.drawLine(midLeft, dividerBox.bottomLeft() + QPoint(arrowWidth, 0))
+            painter.drawLine(midRight, dividerBox.topRight() - QPoint(arrowWidth, 0))
+            painter.drawLine(midRight, dividerBox.bottomRight() - QPoint(arrowWidth, 0))
 
     def _dividerCoords(self):
         imageRight = self.imagePanel.x() + self.imagePanel.width()
@@ -146,12 +149,12 @@ class MainWindow(QMainWindow):
         return QRect(x, y, width, height)
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton and self._dividerCoords().contains(event.pos()):
+        if self.centralWidget.currentWidget() is self.mainWidget and self._dividerCoords().contains(event.pos()):
             self._draggingDivider = True
             self.update()
 
     def mouseMoveEvent(self, event):
-        if event.buttons() and Qt.LeftButton and self._draggingDivider:
+        if event.buttons() and self._draggingDivider:
             x = event.pos().x()
             imgWeight = int(x / self.width() * 300)
             maskWeight = 300 - imgWeight
