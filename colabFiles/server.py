@@ -5,6 +5,7 @@ from threading import Thread, Lock
 import torch
 from torchvision.transforms import functional as TF
 import numpy as np
+from startup.utils import *
 from startup.load_models import loadModels
 from startup.create_sample_function import createSampleFunction
 from startup.generate_samples import generateSamples
@@ -35,11 +36,13 @@ def startServer(device, model_params, model, diffusion, ldm_model, bert_model, c
         current_app.samples = {}
         current_app.lock = Lock()
 
+    # Check if the server's up:
     @app.route("/", methods=["GET"])
     @cross_origin()
     def health_check():
         return jsonify(success=True)
 
+    # Start an inpainting request:
     @app.route("/", methods=["POST"])
     @cross_origin()
     def startInpainting():
@@ -56,8 +59,6 @@ def startServer(device, model_params, model, diffusion, ldm_model, bert_model, c
 
         edit = None
         mask = None
-        def loadImageFromBase64(imageStr):
-            return Image.open(io.BytesIO(base64.b64decode(imageStr)))
         try:
             edit = loadImageFromBase64(json["edit"])
         except Exception as err:
@@ -103,7 +104,7 @@ def startServer(device, model_params, model, diffusion, ldm_model, bert_model, c
                         out = ldm_model.decode(im)
                         out = TF.to_pil_image(out.squeeze(0).add(1).div(2).clamp(0, 1))
                         name = f'{i * batch_size + k:05}'
-                        current_app.samples[name] = { "image": out, "timestamp": timestamp }
+                        current_app.samples[name] = { "image": imageToBase64(out), "timestamp": timestamp }
                         print(f"Created {name} at {timestamp}") 
                 except Exception as err:
                     current_app.lastError = f"sample save error: {err}"
@@ -122,7 +123,7 @@ def startServer(device, model_params, model, diffusion, ldm_model, bert_model, c
                 with current_app.lock:
                     current_app.in_progress = False
                 
-        # Start thread:
+        # Start image generation thread:
         with current_app.lock:
             if current_app.in_progress or current_app.thread and current_app.thread.is_alive():
                 abort(make_response({error: "Cannot start a new operation, an existing operation is still running"}, 409))
@@ -133,18 +134,19 @@ def startServer(device, model_params, model, diffusion, ldm_model, bert_model, c
 
         return jsonify(success=True)
 
+    # Request updated images:
     @app.route("/sample", methods=["GET"])
     @cross_origin()
     def list_updated():
         json = request.get_json(force=True)
         # Parse (sampleName, timestamp) pairs from request.samples
         # Check (sampleName, timestamp) pairs from the most recent request. If any missing from the request or have a
-        # newer timestamp, set response.samples[sampleName] = timestamp.
+        # newer timestamp, set response.samples[sampleName] = { timestamp, base64Image }
         response = { "samples": {} }
         with current_app.lock:
             for key in current_app.samples:
                 if key not in json["samples"] or json["samples"][key] < current_app.samples[key]["timestamp"]:
-                    response["samples"][key] = current_app.samples[key]["timestamp"]
+                    response["samples"][key] = current_app.samples[key]
             # If any errors were saved for the most recent request, use those to set response.errors
             if current_app.lastError != "":
                 response["error"] = current_app.lastError
@@ -152,18 +154,5 @@ def startServer(device, model_params, model, diffusion, ldm_model, bert_model, c
             # Check if the most recent request is finished, use this to set response.in_progress.
             response["in_progress"] = current_app.in_progress
         return response
-
-    @app.route("/sample/<sampleName>", methods=["GET"])
-    @cross_origin()
-    def get_sample(sampleName):
-        with current_app.lock:
-            if sampleName in current_app.samples:
-                pilImage = current_app.samples[sampleName]["image"]
-                imgIO = io.BytesIO()
-                pilImage.save(imgIO, "PNG")
-                imgIO.seek(0)
-                return send_file(imgIO, mimetype="image/png")
-            else:
-                abort(make_response({"error": f"{sampleName} not found"}, 404))
 
     return app

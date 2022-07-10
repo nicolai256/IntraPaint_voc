@@ -1,5 +1,6 @@
 import argparse
 import sys
+from startup.utils import *
 
 # argument parsing:
 parser = argparse.ArgumentParser()
@@ -86,7 +87,12 @@ parser.add_argument('--ddpm', dest='ddpm', action='store_true') # turn on to use
 parser.add_argument('--edit_ui', dest='edit_ui', action='store_true') # Use extended inpainting UI
 
 parser.add_argument('--ui_test', dest='ui_test', action='store_true') # Test UI without loading real functionality
-parser.add_argument('--server_test', dest='server_test', action='store_true') # Test backend colab server
+
+# Start inpainting UI in server mode:
+parser.add_argument('--inpainting_server', dest='server_test', action='store_true',
+                    help='Run inpainting server') # Test backend colab server
+parser.add_argument('--port', type = int, default = 5555, required = False,
+                    help='Port used when running in server mode.')
 
 # Start inpainting UI in client mode:
 parser.add_argument('--inpainting_client', dest='inpainting_client', action='store_true',
@@ -108,9 +114,8 @@ elif args.ui_test or args.edit_ui or args.inpainting_client:
 if args.inpainting_client:
     from PyQt5 import QtCore
     from PyQt5.QtWidgets import QInputDialog
-    import requests
-    import base64
     from PIL import Image
+    import requests
     import io
     print('Testing client/server mode:')
     app = QApplication(sys.argv)
@@ -118,10 +123,6 @@ if args.inpainting_client:
     size = screen.availableGeometry()
     global window
     def inpaint(selection, mask, prompt, batchSize, batchCount, showSample):
-        def imageToBase64(pilImage):
-            buffer = io.BytesIO()
-            pilImage.save(buffer, format='PNG')
-            return str(base64.b64encode(buffer.getvalue()), 'utf-8')
         body = {
             'batch_size': batchSize,
             'num_batches': batchCount,
@@ -180,16 +181,12 @@ if args.inpainting_client:
             if 'samples' not in jsonBody:
                 continue
             for sampleName in jsonBody['samples'].keys():
-                # GET sample image from server_url/sample/id
-                sampleRes = requests.get(f'{args.server_url}/sample/{sampleName}', timeout=5)
-                sampleImage = None
                 try:
-                    errorCheck(sampleRes, f'sample download request for {sampleName}')
-                    sampleImage = Image.open(io.BytesIO(sampleRes.content))
+                    sampleImage = loadImageFromBase64(jsonBody['samples'][sampleName]['image'])
                     idx = int(sampleName) % batchSize
                     batch = int(sampleName) // batchSize
                     showSample(sampleImage, idx, batch)
-                    samples[sampleName] = jsonBody['samples'][sampleName]
+                    samples[sampleName] = jsonBody['samples'][sampleName]['timestamp']
                 except Exception as err:
                     print(f'Warning: {err}')
                     errorCount += 1
@@ -255,7 +252,6 @@ import torch
 from torchvision.transforms import functional as TF
 import numpy as np
 
-from startup.utils import *
 from startup.load_models import loadModels
 from startup.create_sample_function import createSampleFunction
 from startup.generate_samples import generateSamples
@@ -279,9 +275,9 @@ print("Loaded models")
 
 if args.server_test:
     print('Testing backend server')
-    from colab.server import startServer
+    from colabFiles.server import startServer
     app = startServer(device, model_params, model, diffusion, ldm, bert, clip_model, clip_preprocess, normalize)
-    app.run(port=5555, host= '0.0.0.0')
+    app.run(port=args.port, host= '0.0.0.0')
 
 
 def do_run():
