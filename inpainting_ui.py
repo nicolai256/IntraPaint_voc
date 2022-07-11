@@ -1,0 +1,110 @@
+# Runs the inpainting UI and image generation together
+import sys
+from PyQt5.QtWidgets import QApplication
+from edit_ui.main_window import MainWindow
+from startup.utils import *
+
+# argument parsing:
+parser = buildArgParser(defaultModel='inpaint.pt', includeEditParams=False)
+parser.add_argument('--init_edit_image', type=str, required = False, default = None,
+                   help='initial image to edit')
+parser.add_argument('--edit_width', type = int, required = False, default = 256,
+                    help='width of the edit image in the generation frame (need to be multiple of 8)')
+
+parser.add_argument('--edit_height', type = int, required = False, default = 256,
+                            help='height of the edit image in the generation frame (need to be multiple of 8)')
+args = parser.parse_args()
+parser.add_argument('--ui_test', dest='ui_test', action='store_true') # Test UI without loading real functionality
+
+if args.ui_test:
+    print('Testing inpainting UI without loading image generation')
+    app = QApplication(sys.argv)
+    screen = app.primaryScreen()
+    size = screen.availableGeometry()
+    def inpaint(selection, mask, prompt, batchSize, batchCount, showSample):
+        print("Mock inpainting call:")
+        print(f"\tselection: {selection}")
+        print(f"\tmask: {mask}")
+        print(f"\tprompt: {prompt}")
+        print(f"\tbatchSize: {batchSize}")
+        print(f"\tbatchCount: {batchCount}")
+        print(f"\tshowSample: {showSample}")
+        testSample = Image.open(open('mask.png', 'rb')).convert('RGB')
+        showSample(testSample, 0, 0)
+    d = MainWindow(size.width(), size.height(), None, inpaint)
+    d.applyArgs(args)
+    d.show()
+    app.exec_()
+    sys.exit()
+
+import gc
+import os
+from PIL import Image
+import torch
+from torchvision.transforms import functional as TF
+import numpy as np
+
+from startup.load_models import loadModels
+from startup.create_sample_function import createSampleFunction
+from startup.generate_samples import generateSamples
+from startup.ml_utils import *
+
+device = torch.device('cuda:0' if (torch.cuda.is_available() and not args.cpu) else 'cpu')
+print('Using device:', device)
+if args.seed >= 0:
+    torch.manual_seed(args.seed)
+
+
+model_params, model, diffusion, ldm, bert, clip_model, clip_preprocess, normalize = loadModels(device,
+        model_path=args.model_path,
+        bert_path=args.bert_path,
+        kl_path=args.kl_path,
+        steps = args.steps,
+        clip_guidance = args.clip_guidance,
+        cpu = args.cpu,
+        ddpm = args.ddpm,
+        ddim = args.ddim)
+print("Loaded models")
+
+app = QApplication(sys.argv)
+screen = app.primaryScreen()
+size = screen.availableGeometry()
+def inpaint(selection, mask, prompt, batch_size, num_batches, showSample):
+    gc.collect()
+    sample_fn, clip_score_fn = createSampleFunction(
+            device,
+            model,
+            model_params,
+            bert,
+            clip_model,
+            clip_preprocess,
+            ldm,
+            diffusion,
+            normalize,
+            image=None,
+            mask=mask,
+            prompt=prompt,
+            batch_size=batch_size,
+            edit=selection,
+            width=args.width,
+            height=args.height,
+            edit_width=args.edit_width,
+            edit_height=args.edit_height,
+            cutn=args.cutn,
+            clip_guidance=args.clip_guidance,
+            skip_timesteps=args.skip_timesteps,
+            ddpm=args.ddpm,
+            ddim=args.ddim)
+    def save_sample(i, sample, clip_score=False):
+        foreachImageInSample(
+                sample,
+                batch_size,
+                ldm,
+                lambda k, img: showSample(img, k, i))
+    generateSamples(device, ldm, diffusion, sample_fn, save_sample, batch_size, num_batches)
+
+d = MainWindow(size.width(), size.height(), None, inpaint)
+d.applyArgs(args)
+d.show()
+app.exec_()
+sys.exit()

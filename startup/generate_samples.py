@@ -3,6 +3,7 @@ from torchvision.transforms import functional as TF
 from PIL import Image
 
 def generateSamples(
+        device,
         ldm_model,
         diffusion,
         sample_fn,
@@ -12,7 +13,7 @@ def generateSamples(
         width=256,
         height=256,
         init_image=None,
-        clip_score=False):
+        clip_score_fn=None):
     """Given a sample generation function and a sample save function, start generating image samples."""
     if init_image:
         init = Image.open(init_image).convert('RGB')
@@ -27,4 +28,4 @@ def generateSamples(
         for j, sample in enumerate(samples):
             if j % 5 == 0 and j != diffusion.num_timesteps - 1:
                 save_sample(i, sample)
-        save_sample(i, sample, clip_score)
+        save_sample(i, sample, clip_score_fn)

@@ -77,13 +77,14 @@ class ImagePanel(QWidget):
 
         def loadImage(filePath):
             try:
-                image = Image.open(open(filePath, 'rb')).convert('RGB')
-                self.imageViewer.setImage(image)
+                self.imageViewer.setImage(filePath)
                 self.fileTextBox.setText(filePath)
-                self.xCoordBox.setRange(0, max(
-                            image.width - self.imageViewer.selectionWidth, 0))
+                imageSize = self.imageViewer.imageSize()
+                if imageSize:
+                    self.xCoordBox.setRange(0, max(
+                                imageSize.width() - self.imageViewer.selectionWidth, 0))
                 self.yCoordBox.setRange(0, max(
-                            image.height - self.imageViewer.selectionHeight, 0))
+                            imageSize.height() - self.imageViewer.selectionHeight, 0))
             except Exception as err:
                 print(f"Failed to load image from '{filePath}': {err}")
 

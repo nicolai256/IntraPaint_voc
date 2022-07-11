@@ -1,6 +1,6 @@
 from PyQt5 import QtWidgets
 from PyQt5.QtGui import QPainter, QPen
-from PyQt5.QtCore import Qt, QPoint, QRect, pyqtSignal
+from PyQt5.QtCore import Qt, QPoint, QRect, QSize, pyqtSignal
 import PyQt5.QtGui as QtGui
 from PIL import Image
 from edit_ui.ui_utils import *
@@ -67,11 +67,22 @@ class ImageViewer(QtWidgets.QWidget):
         """Returns the image currently being edited as a PIL Image object"""
         return qImageToImage(self._qimage)
 
-    def setImage(self, pilImage):
-        """Applies a pillow Image object as the new image to be edited."""
-        self._qimage = imageToQImage(pilImage)
-        if self._qimage is None:
-            print("ImageViewer.setImage: invalid PIL image!")
+    def setImage(self, image):
+        """Loads a new image to be edited from a file path, QImage, or PIL image."""
+        if isinstance(image, str):
+            try:
+                self._qimage = QImage(image)
+            except Exception as err:
+                self._qimage = None
+            if self._qimage is None:
+                print("ImageViewer.setImage: invalid image!")
+                return
+        elif isinstance(image, QImage):
+            self._qimage = image
+        elif isinstance(image, Image.Image):
+            self._qimage = imageToQImage(image)
+        else:
+            print("ImageViewer.setImage: image was not a string, QImage, or PIL Image")
             return
         self._pixmap = QtGui.QPixmap.fromImage(self._qimage)
         self.resizeEvent(None)
@@ -91,11 +102,11 @@ class ImageViewer(QtWidgets.QWidget):
         # Unless selection size exceeds image size, ensure the selection is
         # entirely within the image:
         if pt.x() >= (self._qimage.width() - self.selectionWidth):
-            pt.setX(self._qimage.width() - self.selectionWidth - 1)
+            pt.setX(self._qimage.width() - self.selectionWidth)
         if pt.x() < 0:
             pt.setX(0)
         if pt.y() >= (self._qimage.height() - self.selectionHeight):
-            pt.setY(self._qimage.height() - self.selectionHeight - 1)
+            pt.setY(self._qimage.height() - self.selectionHeight)
         if pt.y() < 0:
             pt.setY(0)
         if (not hasattr(self, 'selected')) or (pt != self.selected):
@@ -118,6 +129,11 @@ class ImageViewer(QtWidgets.QWidget):
                     self.selectionWidth,
                     self.selectionHeight)
             return qImageToImage(croppedImage)
+    
+    def imageSize(self):
+        """Returns the size of the current edited image."""
+        if self._qimage:
+            return self._qimage.size()
 
     def _imageToWidgetCoords(self, point):
         return QPoint(int(point.x() * self._scale) + self._xMin,

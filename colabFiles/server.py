@@ -6,6 +6,7 @@ import torch
 from torchvision.transforms import functional as TF
 import numpy as np
 from startup.utils import *
+from startup.ml_utils import *
 from startup.load_models import loadModels
 from startup.create_sample_function import createSampleFunction
 from startup.generate_samples import generateSamples
@@ -72,12 +73,13 @@ def startServer(device, model_params, model, diffusion, ldm_model, bert_model, c
 
         sample_fn = None
         try:
-            sample_fn = createSampleFunction(
+            sample_fn, clip_score_fn = createSampleFunction(
                     device,
                     model,
                     model_params,
                     bert_model,
                     clip_model,
+                    clip_preprocess,
                     ldm_model,
                     diffusion,
                     normalize,
@@ -98,21 +100,18 @@ def startServer(device, model_params, model, diffusion, ldm_model, bert_model, c
             with current_app.lock:
                 timestamp = datetime.timestamp(datetime.now())
                 try:
-                    for k, image in enumerate(sample['pred_xstart'][:batch_size]):
-                        image /= 0.18215
-                        im = image.unsqueeze(0)
-                        out = ldm_model.decode(im)
-                        out = TF.to_pil_image(out.squeeze(0).add(1).div(2).clamp(0, 1))
+                    def addImageToResponse(k, image):
                         name = f'{i * batch_size + k:05}'
-                        current_app.samples[name] = { "image": imageToBase64(out), "timestamp": timestamp }
-                        print(f"Created {name} at {timestamp}") 
+                        current_app.samples[name] = { "image": imageToBase64(image), "timestamp": timestamp }
+                    foreachImageInSample(sample, batch_size, ldm_model, addImageToResponse)
                 except Exception as err:
                     current_app.lastError = f"sample save error: {err}"
                     print(current_app.lastError)
 
         def run_thread():
             with context:
-                generateSamples(ldm_model,
+                generateSamples(device,
+                        ldm_model,
                         diffusion,
                         sample_fn,
                         save_sample,

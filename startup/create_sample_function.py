@@ -15,6 +15,7 @@ def createSampleFunction(
         model_params, 
         bert_model,
         clip_model,
+        clip_preprocess,
         ldm_model,
         diffusion,
         normalize,
@@ -38,7 +39,7 @@ def createSampleFunction(
         ddpm=False,
         ddim=False):
     """
-    Creates a function that will generate a set of sample images.
+    Creates a function that will generate a set of sample images, along with an accompanying clip ranking function.
     """
     # bert context
     text_emb = bert_model.encode([prompt]*batch_size).to(device).float()
@@ -111,25 +112,14 @@ def createSampleFunction(
             mask_image.save('mask.png')
             mask_image = mask_image.resize((width//8,height//8), Image.LANCZOS)
             mask = transforms.ToTensor()(mask_image).unsqueeze(0).to(device)
-        elif mask:
+        elif isinstance(edit, str):
             mask_image = Image.open(fetch(mask)).convert('L')
             mask_image = mask_image.resize((width//8,height//8), Image.LANCZOS)
             mask = transforms.ToTensor()(mask_image).unsqueeze(0).to(device)
         else:
-            from PyQt5.QtWidgets import QApplication
-            from edit_ui.quickedit_window import QuickEditWindow
-            print('draw the area for inpainting, then close the window')
-            app = QApplication(sys.argv)
-            d = QuickEditWindow(width, height, input_image_pil)
-            app.exec_()
-            mask_image = d.getMask().convert('L').point( lambda p: 255 if p < 1 else 0 )
-            mask_image.save('mask.png')
-            mask_image = mask_image.resize((width//8,height//8), Image.ANTIALIAS)
-            mask = transforms.ToTensor()(mask_image).unsqueeze(0).to(device)
-
+            raise Exception(f"Expected PIL image or image path for mask, found {mask}")
         mask1 = (mask > 0.5)
         mask1 = mask1.float()
-
         input_image *= mask1
 
         image_embed = torch.cat(batch_size*2*[input_image], dim=0).float()
@@ -211,4 +201,10 @@ def createSampleFunction(
             init_image=init,
             skip_timesteps=skip_timesteps
         )
-    return sample_fn
+    def clip_score_fn(image):
+        """Provides a CLIP score ranking image closeness to text"""
+        image_emb = clip_model.encode_image(clip_preprocess(image).unsqueeze(0).to(device))
+        image_emb_norm = image_emb / image_emb.norm(dim=-1, keepdim=True)
+        similarity = torch.nn.functional.cosine_similarity(image_emb_norm, text_emb_norm, dim=-1)
+        return similarity.item()
+    return sample_fn, clip_score_fn

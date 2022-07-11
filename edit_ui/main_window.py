@@ -106,15 +106,14 @@ class MainWindow(QMainWindow):
 
     def applyArgs(self, args):
         """Applies optional command line arguments to the UI."""
-        if args.init_image:
-            image = Image.open(open(args.init_image, 'rb')).convert('RGB')
-            self.imagePanel.imageViewer.loadImage(image)
-            self.imagePanel.fileTextBox.setText(args.init_image)
         if args.text:
             self.inpaintPanel.textPromptBox.setText(args.text)
-        if args.num_batches:
+        if ('init_edit_image' in args) and args.init_edit_image:
+            self.imagePanel.imageViewer.setImage(args.init_edit_image)
+            self.imagePanel.fileTextBox.setText(args.init_edit_image)
+        if ('num_batches' in args) and args.num_batches:
             self.inpaintPanel.batchCountBox.setValue(args.num_batches)
-        if args.batch_size:
+        if ('batch_size' in args) and args.batch_size:
             self.inpaintPanel.batchSizeBox.setValue(args.batch_size)
 
     def getMask(self):
