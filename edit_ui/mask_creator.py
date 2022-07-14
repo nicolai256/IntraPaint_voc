@@ -1,40 +1,44 @@
 from PyQt5 import QtWidgets
-from PyQt5.QtGui import QPainter, QPen
-from PyQt5.QtCore import Qt, QPoint, QRect, QBuffer
+from PyQt5.QtGui import QPainter, QPen, QImage
+from PyQt5.QtCore import Qt, QPoint, QSize, QRect, QBuffer
 import PyQt5.QtGui as QtGui
 from PIL import Image
-from edit_ui.ui_utils import *
+from edit_ui.ui_utils import getScaledPlacement, imageToQImage, qImageToImage, QEqualMargins
 
 class MaskCreator(QtWidgets.QWidget):
     """
-    QWidget that shows the selected portion of the edited image, and allows the user to draw a mask for inpainting.
-    ...
-    Methods
-    -------
-        setBrushSize : None
-            Set the brush size in pixels used when painting the image mask.
-        clear : None
-            Clear the user-drawn image mask.
-        loadImage : None
-            Load a new image section for inpainting.
-        setUseEraser : None
-            Sets whether drawing should add to the mask, or remove from it.
+    QWidget that shows the selected portion of the edited image, and lets the user draw a mask for inpainting.
     """
 
-    def __init__(self, pilImage, editWidth=256, editHeight=256, borderSize=6):
+    def __init__(self, pilImage):
+        """
+        Parameters:
+        pilImage : Image, optional
+            Initial image area selected for editing.
+        """
         super().__init__()
-        self.drawing = False
+        assert pilImage is None or isinstance(pilImage, Image.Image)
+        
+        self._drawing = False
         self._lastPoint = QPoint()
-        self._brushSize = 20
-        self._borderSize = borderSize
-        self._editWidth=256
-        self._editHeight=256
+        self._brushSize = 40
+        self._selectionSize = QSize(0, 0)
         self._useEraser=False
-        canvasImage = QtGui.QImage(editWidth, editHeight, QtGui.QImage.Format_ARGB32)
-        self._canvas = QtGui.QPixmap.fromImage(canvasImage)
-        self._canvas.fill(Qt.transparent)
+        self._canvas = None
         if pilImage is not None:
             self.loadImage(pilImage)
+
+    def selectionWidth(self):
+        return self._selectionSize.width()
+
+    def selectionHeight(self):
+        return self._selectionSize.height()
+
+    def setSelectionSize(self, size):
+        """Set the dimensions(in pixels) of the edited image area."""
+        if size != self._selectionSize:
+            self._selectionSize = size
+            self.resizeEvent(None)
 
     def setBrushSize(self, newSize):
         self._brushSize = newSize
@@ -46,58 +50,68 @@ class MaskCreator(QtWidgets.QWidget):
         return self._brushSize
 
     def clear(self):
-        self._canvas.fill(Qt.transparent)
-        self.update()
+        if self._canvas is not None:
+            self._canvas.fill(Qt.transparent)
+            self.update()
 
     def loadImage(self, pilImage):
-        displaySize = min(self.width(), self.height()) - self._borderSize * 2
+        if self._canvas is None:
+            # Use a canvas that's large enough to look decent even if I add support for editing scaled regions,
+            # it'll just get resized to selection size on inpainting anyway.
+            canvas_image = QImage(QSize(512, 512), QtGui.QImage.Format_ARGB32)
+            self._canvas = QtGui.QPixmap.fromImage(canvas_image)
+            self._canvas.fill(Qt.transparent)
+        if self._selectionSize != QSize(pilImage.width, pilImage.height):
+            self._selectionSize = QSize(pilImage.width, pilImage.height)
+
+        self._imageRect = getScaledPlacement(QRect(QPoint(0, 0), self.size()), self._selectionSize,
+                self._borderSize())
         self._qimage = imageToQImage(pilImage)
-        self._pixmap = QtGui.QPixmap.fromImage(self._qimage).scaled(displaySize, displaySize)
+        self._pixmap = QtGui.QPixmap.fromImage(self._qimage).scaled(self._imageRect.size())
+        self.resizeEvent(None)
         self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setPen(QPen(Qt.black, 4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-        drawRect = QRect(self._imagePt.x(), self._imagePt.y(), self._canvas.width(), self._canvas.height())
-        if hasattr(self, '_pixmap'):
-            painter.drawPixmap(drawRect, self._pixmap)
-        painter.drawPixmap(drawRect, self._canvas)
-        painter.drawRect(
-                max(self._imagePt.x() - self._borderSize, 0),
-                max(self._imagePt.y() - self._borderSize, 0),
-                int(self._editWidth * self._scale + self._borderSize * 2),
-                int(self._editHeight * self._scale + self._borderSize * 2))
+        if hasattr(self, '_pixmap') and self._pixmap is not None:
+            painter.drawPixmap(self._imageRect, self._pixmap)
+        if hasattr(self, '_canvas') and self._canvas is not None:
+            painter.drawPixmap(self._imageRect, self._canvas)
+        painter.drawRect(self._imageRect.marginsAdded(QEqualMargins(self._borderSize())))
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self.drawing = True
-            self._lastPoint = event.pos() - self._imagePt
+            self._drawing = True
+            
+            self._lastPoint = event.pos() - self._imageRect.topLeft()
 
     def mouseMoveEvent(self, event):
-        if event.buttons() and Qt.LeftButton and self.drawing and hasattr(self, '_canvas'):
+        if event.buttons() and Qt.LeftButton and self._drawing and hasattr(self, '_canvas'):
             painter = QPainter(self._canvas)
             if self._useEraser:
                 painter.setCompositionMode(QPainter.CompositionMode_Clear)
             painter.setPen(QPen(Qt.red, self._brushSize, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-            painter.drawLine(self._lastPoint, event.pos() - self._imagePt)
-            self._lastPoint = event.pos() - self._imagePt
+            painter.drawLine(self._lastPoint, event.pos() - self._imageRect.topLeft())
+            self._lastPoint = event.pos() - self._imageRect.topLeft()
             self.update()
 
     def mouseReleaseEvent(self, event):
         if event.button == Qt.LeftButton:
-            self.drawing = False
+            self._drawing = False
 
     def getMask(self):
-        canvasImage = self._canvas.toImage().scaled(256, 256)
+        canvasImage = self._canvas.toImage().scaled(self._selectionSize)
         return qImageToImage(canvasImage)
 
     def resizeEvent(self, event):
-        self._imagePt, self._scale = getScaledPlacement(
-                [self.width(), self.height()],
-                [self._editWidth, self._editHeight],
-                self._borderSize)
-        width = int(self._editWidth * self._scale)
-        height = int(self._editHeight * self._scale)
-        if hasattr(self, '_pixmap'):
-            self._pixmap = self._pixmap.scaled(width, height)
-        self._canvas = self._canvas.scaled(width, height)
+        if self._selectionSize == QSize(0, 0):
+            self._imageRect = QRect(0, 0, self.width(), self.height())
+        else:
+            self._imageRect = getScaledPlacement(QRect(QPoint(0, 0), self.size()), self._selectionSize,
+                    self._borderSize())
+        if self._canvas:
+            self._canvas = self._canvas.scaled(self._imageRect.size())
+
+    def _borderSize(self):
+        return (min(self.width(), self.height()) // 40) + 1

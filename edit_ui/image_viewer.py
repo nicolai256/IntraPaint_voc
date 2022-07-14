@@ -1,9 +1,9 @@
 from PyQt5 import QtWidgets
-from PyQt5.QtGui import QPainter, QPen
+from PyQt5.QtGui import QPainter, QPen, QImage
 from PyQt5.QtCore import Qt, QPoint, QRect, QSize, pyqtSignal
 import PyQt5.QtGui as QtGui
 from PIL import Image
-from edit_ui.ui_utils import *
+from edit_ui.ui_utils import getScaledPlacement, qImageToImage, imageToQImage, QEqualMargins
 
 class ImageViewer(QtWidgets.QWidget):
     """
@@ -11,57 +11,47 @@ class ImageViewer(QtWidgets.QWidget):
     ...
     Attributes:
     -----------
-    selectionWidth : int
-        Width in pixels of any selected image section.
-    selectionHeight : int
-        Height in pixels of any selected image section.
     onSelection : pyqtSignal(QPoint)
         Signal that fires whenever the selection changes coordinates, or whenever the image portion under the
         selection changes.
-
-    Methods:
-    --------
-    getImage : Image
-        Gets the widget's image.
-    setImage : None
-        Applies a new image to the widget.
-    getSelection : QPoint
-        Gets the coordinates of the selected image section.
-    setSelection : None
-        Sets the coordinates of the image that should be selected.
-    insertIntoSelection : None
-        Paste an image sample over the current image at the selection coordinates.
-    getSelectedSection : Image
-        Returns the selected portion of the image.
     """
-    onSelection = pyqtSignal(QPoint)
+    onSelection = pyqtSignal(QPoint, QSize)
 
     def __init__( self,
             pilImage=None,
-            borderSize=4,
-            selectionWidth=256,
-            selectionHeight=256):
+            selectionSize = QSize(256, 256)):
         """
         Parameters:
         -----------
         pilImage : Image, optional
             An initial pillow Image object to load.
-        borderSize : int, optional
-            Width in pixels of the border around the image.
-        selectionWidth : int, optional
-            Width in pixels of selected image sections used for inpainting.
-            Values greater than 256 will probably not work well.
-        selectionHeight : int, optional
-            Height in pixels of selected image sections used for inpainting.
-            Values greater than 256 will probably not work well.
+        selectionSize : QSize, default QSize(256, 256)
+            Size in pixels of selected image sections used for inpainting.
+            Dimensions should be positive multiples of 64, no greater than 256.
         """
         super().__init__()
-        self.selectionWidth = selectionWidth
-        self.selectionHeight = selectionHeight
-        self._borderSize = borderSize
-        self.selectionWidth = selectionWidth
+        assert pilImage is None or isinstance(pilImage, Image.Image)
+        assert isinstance(selectionSize, QSize)
+        for dim in [selectionSize.width(), selectionSize.height()]:
+            assert dim > 0 and dim <= 256 and ((dim % 64) == 0)
+
+        self._selectionSize = selectionSize
+        self._borderSize = 4
+        self._selected = QPoint(0, 0)
         if pilImage is not None:
             self.setImage(pilImage)
+
+    def selectionWidth(self):
+        """Returns the width of the selected image area."""
+        return self._selectionSize.width()
+    
+    def selectionHeight(self):
+        """Returns the height of the selected image area."""
+        return self._selectionSize.height()
+
+    def selectionSize(self):
+        """Returns the size of the selected image area."""
+        return self._selectionSize
 
     def getImage(self):
         """Returns the image currently being edited as a PIL Image object"""
@@ -72,7 +62,9 @@ class ImageViewer(QtWidgets.QWidget):
         if isinstance(image, str):
             try:
                 self._qimage = QImage(image)
+                self._qimage.convertTo(QImage.Format_RGB888)
             except Exception as err:
+                print(f"image load error: {err}")
                 self._qimage = None
             if self._qimage is None:
                 print("ImageViewer.setImage: invalid image!")
@@ -86,49 +78,65 @@ class ImageViewer(QtWidgets.QWidget):
             return
         self._pixmap = QtGui.QPixmap.fromImage(self._qimage)
         self.resizeEvent(None)
-        if not hasattr(self, 'selected'):
-            self.selected = QPoint(0, 0)
-        self.onSelection.emit(self.selected)
+        if not hasattr(self, '_selected'):
+            self._selected = QPoint(0, 0)
+        self.onSelection.emit(self._selected, self._selectionSize)
         self.update()
 
     def getSelection(self):
         """Gets the QPoint coordinates of the area selected for inpainting."""
-        if hasattr(self, 'selected'):
-            return self.selected
+        if hasattr(self, '_selected'):
+            return self._selected
 
-    def setSelection(self, pt):
-        """Sets the QPoint coordinates of the area selected for inpainting."""
+    def setSelection(self, pt=None, size=None):
+        """Sets the QPoint coordinates and/or QSize dimensions of the area selected for inpainting."""
+        assert pt is None or isinstance(pt, QPoint)
+        assert size is None or isinstance(size, QSize)
+        assert pt is not None or size is not None
 
+        if not hasattr(self, '_selected') or not hasattr(self, '_qimage'):
+            return
         # Unless selection size exceeds image size, ensure the selection is
         # entirely within the image:
-        if pt.x() >= (self._qimage.width() - self.selectionWidth):
-            pt.setX(self._qimage.width() - self.selectionWidth)
-        if pt.x() < 0:
-            pt.setX(0)
-        if pt.y() >= (self._qimage.height() - self.selectionHeight):
-            pt.setY(self._qimage.height() - self.selectionHeight)
-        if pt.y() < 0:
-            pt.setY(0)
-        if (not hasattr(self, 'selected')) or (pt != self.selected):
-            self.selected = pt
-            self.onSelection.emit(self.selected)
+        initial_size = self._selectionSize
+        initial_coords = self._selected
+        if size:
+            for dim_name, dim in [('width', size.width()), ('height', size.height())]:
+                if not (dim > 0) or not (dim % 8) == 0:
+                    raise Exception(f'{dim_name} must be a positive, nonzero multiple of eight, found {dim}')
+            self._selectionSize = size
+            if not pt:
+                pt = initial_coords
+        if pt:
+            if pt.x() >= (self._qimage.width() - self.selectionWidth()):
+                pt.setX(self._qimage.width() - self.selectionWidth())
+            if pt.x() < 0:
+                pt.setX(0)
+            if pt.y() >= (self._qimage.height() - self.selectionHeight()):
+                pt.setY(self._qimage.height() - self.selectionHeight())
+            if pt.y() < 0:
+                pt.setY(0)
+            self._selected = pt
+        if (size and size != initial_size) or (pt and pt != initial_coords):
+            self.onSelection.emit(self._selected, self._selectionSize)
             self.update()
 
-    def insertIntoSelection(self, image):
+    def insertIntoSelection(self, inserted_image):
         """Pastes a pillow image object onto the image at the selected coordinates."""
-        if hasattr(self, 'selected') and hasattr(self, '_qimage'):
+        assert isinstance(inserted_image, Image.Image)
+        if hasattr(self, '_selected') and hasattr(self, '_qimage'):
             pilImage = qImageToImage(self._qimage)
-            pilImage.paste(image, (self.selected.x(), self.selected.y()))
+            pilImage.paste(inserted_image, (self._selected.x(), self._selected.y()))
             self.setImage(pilImage)
 
     def getSelectedSection(self):
         """Gets a copy of the image, cropped to the current selection area."""
-        if hasattr(self, 'selected'):
-            croppedImage = self._qimage.copy(self.selected.x(),
-                    self.selected.y(),
-                    self.selectionWidth,
-                    self.selectionHeight)
-            return qImageToImage(croppedImage)
+        if hasattr(self, '_selected'):
+            cropped_image = self._qimage.copy(self._selected.x(),
+                    self._selected.y(),
+                    self.selectionWidth(),
+                    self.selectionHeight())
+            return qImageToImage(cropped_image)
     
     def imageSize(self):
         """Returns the size of the current edited image."""
@@ -136,50 +144,46 @@ class ImageViewer(QtWidgets.QWidget):
             return self._qimage.size()
 
     def _imageToWidgetCoords(self, point):
-        return QPoint(int(point.x() * self._scale) + self._xMin,
-                int(point.y() * self._scale) + self._yMin)
+        assert isinstance(point, QPoint)
+        scale = self._imageRect.width() / self._qimage.width()
+        return QPoint(int(point.x() * scale) + self._imageRect.x(),
+                int(point.y() * scale) + self._imageRect.y())
 
     def _widgetToImageCoords(self, point):
-        return QPoint(int((point.x() - self._xMin) / self._scale),
-                int((point.y() - self._yMin) / self._scale))
+        assert isinstance(point, QPoint)
+        scale = self._imageRect.width() / self._qimage.width()
+        return QPoint(int((point.x() - self._imageRect.x()) / scale),
+                int((point.y() - self._imageRect.y()) / scale))
 
     def paintEvent(self, event):
+        """Draw the image, selection area, and border."""
         if not hasattr(self, '_qimage'):
             return
         painter = QPainter(self)
-        left = (self.width() - self._pixmap.width()) // 2
-        top = (self.height() - self._pixmap.height()) // 2
-        painter.drawPixmap(QRect(left, top, self._pixmap.width(), self._pixmap.height()), self._pixmap)
+        painter.drawPixmap(self._imageRect, self._pixmap)
 
         painter.setPen(QPen(Qt.black, self._borderSize, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-        painter.drawRect(1, 1, self.width() - 2, self.height() - 2)
-        if hasattr(self, 'selected'):
+        margin = self._borderSize // 2
+        painter.drawRect(QRect(QPoint(0, 0), self.size()).marginsRemoved(QEqualMargins(2)))
+        if hasattr(self, '_selected'):
             painter.setPen(QPen(Qt.black, 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-            widgetCoords = self._imageToWidgetCoords(self.selected)
-            painter.drawRect(
-                    widgetCoords.x(),
-                    widgetCoords.y(),
-                    int(self.selectionWidth * self._scale),
-                    int(self.selectionHeight * self._scale)) 
+            selectionTopLeft = self._imageToWidgetCoords(self._selected)
+            selectionBottomRight = self._imageToWidgetCoords(self._selected 
+                    + QPoint(self.selectionWidth(), self.selectionHeight()))
+            selectedRect = QRect(selectionTopLeft, self._selectionSize)
+            selectedRect.setBottomRight(selectionBottomRight)
+            painter.drawRect(selectedRect)
 
     def mousePressEvent(self, event):
+        """Select the arean in the image to be edited."""
         if event.button() == Qt.LeftButton and hasattr(self, '_qimage'):
             imageCoords = self._widgetToImageCoords(event.pos())
             self.setSelection(imageCoords)
             self.update()
 
     def resizeEvent(self, event):
-        if not hasattr(self, '_qimage'):
+        if not hasattr(self, '_qimage') or not isinstance(self._qimage, QImage):
             return
-        imageWidth = self._qimage.width()
-        imageHeight = self._qimage.height()
-        imagePt, self._scale = getScaledPlacement(
-                [self.width(), self.height()],
-                [imageWidth, imageHeight],
-                self._borderSize)
-        self._xMin = imagePt.x()
-        self._yMin = imagePt.y()
-        self._xMax = self._xMin + int(imageWidth * self._scale)
-        self._yMax = self._yMin + int(imageHeight * self._scale)
+        self._imageRect = getScaledPlacement(QRect(QPoint(0, 0), self.size()), self._qimage.size(), self._borderSize)
         self._pixmap = QtGui.QPixmap.fromImage(self._qimage)
-        self._pixmap = self._pixmap.scaled(int(imageWidth * self._scale), int(imageHeight * self._scale))
+        self._pixmap = self._pixmap.scaled(self._imageRect.size())

@@ -8,8 +8,12 @@ import io
 class InpaintingPanel(QWidget):
     def __init__(self, doInpaint, getImage, getSelection, getMask):
         super().__init__()
+        assert callable(doInpaint)
+        assert callable(getImage)
+        assert callable(getSelection)
+        assert callable(getMask)
 
-        self.textPromptBox = QLineEdit("Enter text prompt here", self)
+        self.textPromptBox = QLineEdit("", self)
 
         self.batchSizeBox = QSpinBox(self)
         self.batchSizeBox.setValue(3)
@@ -42,9 +46,14 @@ class InpaintingPanel(QWidget):
         self.saveButton.setText("Save Image")
 
         self.layout = QGridLayout()
-        self.layout.addWidget(self.textPromptBox, 1, 1, 1, 8)
-        self.layout.addWidget(self.batchSizeBox, 1, 9, 1, 1)
-        self.layout.addWidget(self.batchCountBox, 1, 10, 1, 1)
-        self.layout.addWidget(self.inpaintButton, 1, 11, 1, 2)
-        self.layout.addWidget(self.saveButton, 1, 13, 1, 2)
+        # Row 1:
+        self.layout.addWidget(QLabel(self, text="Prompt"), 1, 1, 1, 1)
+        self.layout.addWidget(self.textPromptBox, 1, 2, 1, 1)
+        self.layout.addWidget(QLabel(self, text="Batch size:"), 1, 3, 1, 1)
+        self.layout.addWidget(self.batchSizeBox, 1, 4, 1, 1)
+        self.layout.addWidget(QLabel(self, text="Batch count:"), 1, 5, 1, 1)
+        self.layout.addWidget(self.batchCountBox, 1, 6, 1, 1)
+        self.layout.addWidget(self.inpaintButton, 1, 7, 1, 1)
+        self.layout.addWidget(self.saveButton, 1, 8, 1, 1)
+        self.layout.setColumnStretch(2, 255) # Maximize prompt input
         self.setLayout(self.layout)

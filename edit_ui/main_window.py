@@ -7,6 +7,7 @@ from edit_ui.inpainting_panel import InpaintingPanel
 from edit_ui.sample_selector import SampleSelector
 import PyQt5.QtGui as QtGui
 from PIL import Image, ImageFilter
+import sys
 
 class MainWindow(QMainWindow):
     """Creates a user interface to simplify repeated inpainting operations on image sections."""
@@ -36,10 +37,16 @@ class MainWindow(QMainWindow):
             self.thread = QThread()
             class InpaintThreadWorker(QObject):
                 finished = pyqtSignal()
-                shouldRedraw = pyqtSignal()
+                imageReady = pyqtSignal(Image.Image, int, int)
                 def run(self):
-                    doInpaint(selection, mask, prompt, batchSize, batchCount,
-                            loadSamplePreview)
+                    def sendImage(img, y, x):
+                        self.imageReady.emit(img, y, x)
+                        QThread.usleep(10) # Briefly pausing the inpainting thread gives the UI thread a chance to redraw.
+                    try:
+                        doInpaint(selection, mask, prompt, batchSize, batchCount, sendImage)
+                    except Exception as err:
+                        print(f'Inpainting failure: {err}')
+                        sys.exit()
                     self.finished.emit()
             self.worker = InpaintThreadWorker()
 
@@ -49,9 +56,11 @@ class MainWindow(QMainWindow):
                     self.centralWidget.setCurrentWidget(self.mainWidget)
                     self.centralWidget.removeWidget(selector)
                     self.update()
+
             def selectSample(pilImage):
                 self.imagePanel.imageViewer.insertIntoSelection(pilImage)
                 closeSampleSelector()
+
             def loadSamplePreview(img, y, x):
                 # Inpainting can create subtle changes outside the mask area, which can gradually impact image quality
                 # and create annoying lines in larger images. To fix this, apply the mask to the resulting sample, and
@@ -59,12 +68,13 @@ class MainWindow(QMainWindow):
                 # quality.
                 maskAlpha = mask.convert('L').point( lambda p: 255 if p < 1 else 0 ).filter(ImageFilter.GaussianBlur())
                 cleanImage = Image.composite(selection, img, maskAlpha)
-                sampleSelector.loadSample(cleanImage, y, x)
-                self.worker.shouldRedraw.emit()
-                self.thread.usleep(10) # Briefly pausing the inpainting thread gives the UI thread a chance to redraw.
+                sampleSelector.loadSampleImage(cleanImage, y, x)
+                sampleSelector.repaint()
 
             sampleSelector = SampleSelector(batchSize,
                     batchCount,
+                    selection,
+                    mask,
                     selectSample,
                     closeSampleSelector)
             self.centralWidget.addWidget(sampleSelector)
@@ -72,7 +82,7 @@ class MainWindow(QMainWindow):
             sampleSelector.setIsLoading(True)
             self.update()
 
-            self.worker.shouldRedraw.connect(lambda: sampleSelector.repaint())
+            self.worker.imageReady.connect(loadSamplePreview)
             self.worker.finished.connect(lambda: sampleSelector.setIsLoading(False))
             self.thread.started.connect(self.worker.run)
             self.thread.finished.connect(self.thread.deleteLater)
@@ -85,17 +95,15 @@ class MainWindow(QMainWindow):
                 lambda: self.imagePanel.imageViewer.getImage(),
                 lambda: self.imagePanel.imageViewer.getSelectedSection(),
                 lambda: self.maskPanel.getMask())
+        self.layout = QVBoxLayout()
 
-        self.setGeometry(0, 0, width, height)
-        self.layout = QGridLayout()
-        self.layout.addWidget(self.imagePanel, 0, 0, 1, 1)
-        self.layout.addWidget(self.maskPanel, 0, 2, 1, 1)
-        self.layout.addWidget(self.inpaintPanel, 2, 0, 1, 2)
-        self.layout.setRowStretch(0, 100)
-        self.layout.setColumnStretch(0, 250)
-        self.layout.setColumnStretch(1, 5)
-        self.layout.setColumnStretch(2, 50)
-        self.layout.setColumnMinimumWidth(2, 300)
+        self.imageLayout = QHBoxLayout()
+        self.imageLayout.addWidget(self.imagePanel, stretch=255)
+        self.imageLayout.addSpacing(30)
+        self.imageLayout.addWidget(self.maskPanel, stretch=100)
+        self.layout.addLayout(self.imageLayout, stretch=255)
+
+        self.layout.addWidget(self.inpaintPanel, stretch=20)
         self.mainWidget = QWidget(self);
         self.mainWidget.setLayout(self.layout)
 
@@ -109,7 +117,7 @@ class MainWindow(QMainWindow):
         if args.text:
             self.inpaintPanel.textPromptBox.setText(args.text)
         if ('init_edit_image' in args) and args.init_edit_image:
-            self.imagePanel.imageViewer.setImage(args.init_edit_image)
+            self.imagePanel.loadImage(args.init_edit_image)
             self.imagePanel.fileTextBox.setText(args.init_edit_image)
         if ('num_batches' in args) and args.num_batches:
             self.inpaintPanel.batchCountBox.setValue(args.num_batches)
@@ -157,8 +165,8 @@ class MainWindow(QMainWindow):
             x = event.pos().x()
             imgWeight = int(x / self.width() * 300)
             maskWeight = 300 - imgWeight
-            self.layout.setColumnStretch(0, imgWeight)
-            self.layout.setColumnStretch(2, maskWeight)
+            self.imageLayout.setStretch(0, imgWeight)
+            self.imageLayout.setStretch(2, maskWeight)
             self.update()
 
     def mouseReleaseEvent(self, event):

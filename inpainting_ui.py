@@ -13,8 +13,8 @@ parser.add_argument('--edit_width', type = int, required = False, default = 256,
 
 parser.add_argument('--edit_height', type = int, required = False, default = 256,
                             help='height of the edit image in the generation frame (need to be multiple of 8)')
-args = parser.parse_args()
 parser.add_argument('--ui_test', dest='ui_test', action='store_true') # Test UI without loading real functionality
+args = parser.parse_args()
 
 if args.ui_test:
     print('Testing inpainting UI without loading image generation')
@@ -32,6 +32,7 @@ if args.ui_test:
         testSample = Image.open(open('mask.png', 'rb')).convert('RGB')
         showSample(testSample, 0, 0)
     d = MainWindow(size.width(), size.height(), None, inpaint)
+    d.setGeometry(0, 0, size.width(), size.height())
     d.applyArgs(args)
     d.show()
     app.exec_()
@@ -71,6 +72,15 @@ screen = app.primaryScreen()
 size = screen.availableGeometry()
 def inpaint(selection, mask, prompt, batch_size, num_batches, showSample):
     gc.collect()
+    if not isinstance(selection, Image.Image):
+        raise Exception(f'Expected PIL Image selection, got {selection}')
+    if not isinstance(mask, Image.Image):
+        raise Exception(f'Expected PIL Image mask, got {mask}')
+    if selection.width != mask.width:
+        raise Exception(f'Selection and mask widths should match, found {selection.width} and {mask.width}')
+    if selection.height != mask.height:
+        raise Exception(f'Selection and mask widths should match, found {selection.width} and {mask.width}')
+    print(f'painting {selection.width} x {selection.height}')
     sample_fn, clip_score_fn = createSampleFunction(
             device,
             model,
@@ -86,10 +96,10 @@ def inpaint(selection, mask, prompt, batch_size, num_batches, showSample):
             prompt=prompt,
             batch_size=batch_size,
             edit=selection,
-            width=args.width,
-            height=args.height,
-            edit_width=args.edit_width,
-            edit_height=args.edit_height,
+            width=selection.width,
+            height=selection.height,
+            edit_width=selection.width,
+            edit_height=selection.height,
             cutn=args.cutn,
             clip_guidance=args.clip_guidance,
             skip_timesteps=args.skip_timesteps,
@@ -101,10 +111,11 @@ def inpaint(selection, mask, prompt, batch_size, num_batches, showSample):
                 batch_size,
                 ldm,
                 lambda k, img: showSample(img, k, i))
-    generateSamples(device, ldm, diffusion, sample_fn, save_sample, batch_size, num_batches)
+    generateSamples(device, ldm, diffusion, sample_fn, save_sample, batch_size, num_batches)#, selection.width, selection.height)
 
 d = MainWindow(size.width(), size.height(), None, inpaint)
 d.applyArgs(args)
+d.setGeometry(0, 0, size.width(), size.height())
 d.show()
 app.exec_()
 sys.exit()
