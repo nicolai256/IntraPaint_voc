@@ -80,7 +80,9 @@ def inpaint(selection, mask, prompt, batch_size, num_batches, showSample):
         raise Exception(f'Selection and mask widths should match, found {selection.width} and {mask.width}')
     if selection.height != mask.height:
         raise Exception(f'Selection and mask widths should match, found {selection.width} and {mask.width}')
-    print(f'painting {selection.width} x {selection.height}')
+
+
+
     sample_fn, clip_score_fn = createSampleFunction(
             device,
             model,
@@ -111,7 +113,8 @@ def inpaint(selection, mask, prompt, batch_size, num_batches, showSample):
                 batch_size,
                 ldm,
                 lambda k, img: showSample(img, k, i))
-    generateSamples(device, ldm, diffusion, sample_fn, save_sample, batch_size, num_batches)#, selection.width, selection.height)
+
+    generateSamples(device, ldm, diffusion, sample_fn, save_sample, batch_size, num_batches, selection.width, selection.height)
 
 d = MainWindow(size.width(), size.height(), None, inpaint)
 d.applyArgs(args)

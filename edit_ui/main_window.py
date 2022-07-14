@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import QPainter, QPen
-from PyQt5.QtCore import Qt, QObject, QThread, QRect, QPoint, pyqtSignal
+from PyQt5.QtCore import Qt, QObject, QThread, QRect, QPoint, QSize, pyqtSignal
 from edit_ui.mask_panel import MaskPanel
 from edit_ui.image_panel import ImagePanel
 from edit_ui.inpainting_panel import InpaintingPanel
@@ -34,16 +34,33 @@ class MainWindow(QMainWindow):
         self._draggingDivider = False
 
         def inpaintAndShowSamples(selection, mask, prompt, batchSize, batchCount):
+            # Scale selection as close to 256x256 as possible while maintaining aspect ratio
+            largestDim = max(selection.width, selection.height)
+            scale = 256 / largestDim
+            width = int(selection.width * scale + 1)
+            width = width - (width % 64)
+            height = int(selection.height * scale + 1)
+            height = height - (height % 64)
+            baseSize = QSize(selection.width, selection.height)
+            scaled = QSize(width, height)
+
+
             self.thread = QThread()
             class InpaintThreadWorker(QObject):
                 finished = pyqtSignal()
                 imageReady = pyqtSignal(Image.Image, int, int)
                 def run(self):
                     def sendImage(img, y, x):
-                        self.imageReady.emit(img, y, x)
-                        QThread.usleep(10) # Briefly pausing the inpainting thread gives the UI thread a chance to redraw.
+                        resized = img.resize((baseSize.width(), baseSize.height()))
+                        self.imageReady.emit(resized, y, x)
+                        QThread.usleep(100) # Briefly pausing the inpainting thread gives the UI thread a chance to redraw.
                     try:
-                        doInpaint(selection, mask, prompt, batchSize, batchCount, sendImage)
+                        doInpaint(selection.resize((scaled.width(), scaled.height())),
+                                    mask.resize((scaled.width(), scaled.height())),
+                                    prompt,
+                                    batchSize,
+                                    batchCount,
+                                    sendImage)
                     except Exception as err:
                         print(f'Inpainting failure: {err}')
                         sys.exit()
