@@ -21,7 +21,10 @@ if args.ui_test:
     app = QApplication(sys.argv)
     screen = app.primaryScreen()
     size = screen.availableGeometry()
-    def inpaint(selection, mask, prompt, batchSize, batchCount, showSample):
+    def inpaint(selection, mask, prompt, batch_size, num_batches, showSample,
+            negative = "",
+            guidanceScale = 5,
+            skipSteps = 0):
         print("Mock inpainting call:")
         print(f"\tselection: {selection}")
         print(f"\tmask: {mask}")
@@ -29,6 +32,9 @@ if args.ui_test:
         print(f"\tbatchSize: {batchSize}")
         print(f"\tbatchCount: {batchCount}")
         print(f"\tshowSample: {showSample}")
+        print(f"\tnegative: {negative}")
+        print(f"\tguidanceScale: {guidanceScale}")
+        print(f"\tskipSteps: {skipSteps}")
         testSample = Image.open(open('mask.png', 'rb')).convert('RGB')
         showSample(testSample, 0, 0)
     d = MainWindow(size.width(), size.height(), None, inpaint)
@@ -70,7 +76,10 @@ print("Loaded models")
 app = QApplication(sys.argv)
 screen = app.primaryScreen()
 size = screen.availableGeometry()
-def inpaint(selection, mask, prompt, batch_size, num_batches, showSample):
+def inpaint(selection, mask, prompt, batch_size, num_batches, showSample,
+        negative = "",
+        guidanceScale = 5,
+        skipSteps = 0):
     gc.collect()
     if not isinstance(selection, Image.Image):
         raise Exception(f'Expected PIL Image selection, got {selection}')
@@ -96,6 +105,8 @@ def inpaint(selection, mask, prompt, batch_size, num_batches, showSample):
             image=None,
             mask=mask,
             prompt=prompt,
+            negative=negative,
+            guidance_scale=guidanceScale,
             batch_size=batch_size,
             edit=selection,
             width=selection.width,
@@ -104,7 +115,7 @@ def inpaint(selection, mask, prompt, batch_size, num_batches, showSample):
             edit_height=selection.height,
             cutn=args.cutn,
             clip_guidance=args.clip_guidance,
-            skip_timesteps=args.skip_timesteps,
+            skip_timesteps=skipSteps,
             ddpm=args.ddpm,
             ddim=args.ddim)
     def save_sample(i, sample, clip_score=False):

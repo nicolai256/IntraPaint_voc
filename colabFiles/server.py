@@ -87,12 +87,12 @@ def startServer(device, model_params, model, diffusion, ldm_model, bert_model, c
                     mask=mask,
                     prompt = requestedOrDefault("prompt", ""),
                     negative = requestedOrDefault("negative", ""),
-                    guidance_scale = requestedOrDefault("guidance_scale", 5.0),
+                    guidance_scale = requestedOrDefault("guidanceScale", 5.0),
                     batch_size = batch_size,
                     width = width,
                     height = height,
                     cutn = requestedOrDefault("cutn", 16),
-                    skip_timesteps = requestedOrDefault("skip_timesteps", False))
+                    skip_timesteps = requestedOrDefault("skipSteps", False))
         except Exception as err:
             abort(make_response({"error": f"creating sample function failed, {err}"}, 500))
 

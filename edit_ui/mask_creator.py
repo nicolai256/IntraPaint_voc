@@ -81,13 +81,12 @@ class MaskCreator(QtWidgets.QWidget):
         painter.drawRect(self._imageRect.marginsAdded(QEqualMargins(self._borderSize())))
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.LeftButton and self._canvas is not None:
             self._drawing = True
-            
             self._lastPoint = event.pos() - self._imageRect.topLeft()
 
     def mouseMoveEvent(self, event):
-        if event.buttons() and Qt.LeftButton and self._drawing and hasattr(self, '_canvas'):
+        if event.buttons() and Qt.LeftButton and self._drawing and self._canvas is not None:
             painter = QPainter(self._canvas)
             if self._useEraser:
                 painter.setCompositionMode(QPainter.CompositionMode_Clear)
@@ -97,10 +96,12 @@ class MaskCreator(QtWidgets.QWidget):
             self.update()
 
     def mouseReleaseEvent(self, event):
-        if event.button == Qt.LeftButton:
+        if event.button == Qt.LeftButton and self._drawing:
             self._drawing = False
 
     def getMask(self):
+        if self._canvas is None:
+            return None
         canvasImage = self._canvas.toImage().scaled(self._selectionSize)
         return qImageToImage(canvasImage)
 

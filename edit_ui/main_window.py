@@ -5,6 +5,7 @@ from edit_ui.mask_panel import MaskPanel
 from edit_ui.image_panel import ImagePanel
 from edit_ui.inpainting_panel import InpaintingPanel
 from edit_ui.sample_selector import SampleSelector
+from edit_ui.ui_utils import showErrorDialog
 import PyQt5.QtGui as QtGui
 from PIL import Image, ImageFilter
 import sys
@@ -26,46 +27,64 @@ class MainWindow(QMainWindow):
             Function used to trigger inpainting on a selected area of the edited image.
         """
         super().__init__()
-
         self.imagePanel = ImagePanel(im)
         self.maskPanel = MaskPanel(im,
                 lambda: self.imagePanel.imageViewer.getSelectedSection(),
                 self.imagePanel.imageViewer.onSelection)
         self._draggingDivider = False
+        self.thread = None
 
-        def inpaintAndShowSamples(selection, mask, prompt, batchSize, batchCount):
-            # Scale selection as close to 256x256 as possible while maintaining aspect ratio
-            largestDim = max(selection.width, selection.height)
-            scale = 256 / largestDim
-            width = int(selection.width * scale + 1)
-            width = width - (width % 64)
-            height = int(selection.height * scale + 1)
-            height = height - (height % 64)
-            baseSize = QSize(selection.width, selection.height)
-            scaled = QSize(width, height)
-
-
+        def inpaintAndShowSamples(selection, mask, prompt, batchSize, batchCount, negative, guidanceScale, skipSteps):
+            if selection is None:
+                showErrorDialog(self, "Failed", "Load an image for editing before trying to start inpainting.")
+                return
+            if self.thread is not None:
+                showErrorDialog(self, "Failed", "Existing inpainting operation not yet finished, wait a little longer.")
+                return
             self.thread = QThread()
+
+            # If scaling is enabled, scale selection as close to 256x256 as possible while attempting to minimize
+            # aspect ratio changes:
+            inpaintImage = selection
+            inpaintMask = mask
+            if self.inpaintPanel.scalingEnabled():
+                largestDim = max(selection.width, selection.height)
+                scale = 256 / largestDim
+                width = int(selection.width * scale + 1)
+                width = max(64, width - (width % 64))
+                height = int(selection.height * scale + 1)
+                height = max(64, height - (height % 64))
+                inpaintImage = selection.resize((width, height))
+                inpaintMask = mask.resize((width, height))
+            elif inpaintMask.width != inpaintImage.width or inpaintMask.height != inpaintImage.height:
+                inpaintMask = mask.resize((inpaintImage.width, inpaintImage.height))
+
+            window = self
             class InpaintThreadWorker(QObject):
                 finished = pyqtSignal()
                 imageReady = pyqtSignal(Image.Image, int, int)
+                errorSignal = pyqtSignal(str)
                 def run(self):
                     def sendImage(img, y, x):
-                        resized = img.resize((baseSize.width(), baseSize.height()))
-                        self.imageReady.emit(resized, y, x)
-                        QThread.usleep(100) # Briefly pausing the inpainting thread gives the UI thread a chance to redraw.
+                        if img.width != selection.width or img.height != selection.height:
+                            img = img.resize((selection.width, selection.height))
+                        self.imageReady.emit(img, y, x)
                     try:
-                        doInpaint(selection.resize((scaled.width(), scaled.height())),
-                                    mask.resize((scaled.width(), scaled.height())),
+                        doInpaint(inpaintImage,
+                                    inpaintMask,
                                     prompt,
                                     batchSize,
                                     batchCount,
-                                    sendImage)
+                                    sendImage,
+                                    negative,
+                                    guidanceScale,
+                                    skipSteps)
                     except Exception as err:
                         print(f'Inpainting failure: {err}')
-                        sys.exit()
+                        self.errorSignal.emit(str(err))
                     self.finished.emit()
             self.worker = InpaintThreadWorker()
+            self.worker.moveToThread(self.thread)
 
             def closeSampleSelector():
                 selector = self.centralWidget.currentWidget()
@@ -99,10 +118,17 @@ class MainWindow(QMainWindow):
             sampleSelector.setIsLoading(True)
             self.update()
 
+            def handleError(err):
+                closeSampleSelector()
+                showErrorDialog(window, "Inpainting failure", err)
+            self.worker.errorSignal.connect(handleError)
             self.worker.imageReady.connect(loadSamplePreview)
             self.worker.finished.connect(lambda: sampleSelector.setIsLoading(False))
             self.thread.started.connect(self.worker.run)
             self.thread.finished.connect(self.thread.deleteLater)
+            def clearOldThread():
+                self.thread = None
+            self.thread.finished.connect(clearOldThread)
             self.worker.finished.connect(self.thread.quit)
             self.worker.finished.connect(self.worker.deleteLater)
             self.thread.start()
@@ -112,6 +138,8 @@ class MainWindow(QMainWindow):
                 lambda: self.imagePanel.imageViewer.getImage(),
                 lambda: self.imagePanel.imageViewer.getSelectedSection(),
                 lambda: self.maskPanel.getMask())
+        self.inpaintPanel.enableScaleToggled.connect(lambda v: self.imagePanel.setScaleEnabled(v))
+
         self.layout = QVBoxLayout()
 
         self.imageLayout = QHBoxLayout()

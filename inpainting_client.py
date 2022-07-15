@@ -17,26 +17,30 @@ parser.add_argument('--init_edit_image', type=str, required = False, default = N
                    help='initial image to edit')
 parser.add_argument('--edit_width', type = int, required = False, default = 256,
                     help='width of the edit image in the generation frame (need to be multiple of 8)')
-
 parser.add_argument('--edit_height', type = int, required = False, default = 256,
                             help='height of the edit image in the generation frame (need to be multiple of 8)')
 parser.add_argument('--server_url', type = str, required = False, default = '',
                     help='Image generation server URL. If not provided, you will be prompted for a URL on launch.')
 parser.add_argument('--fast_ngrok_connection', type = str, required = False, default = '',
-                    help='If true, connection rates will not be limited when using ngrok. You should only use this if you have a paid ngrok account')
+                    help='If true, connection rates will not be limited when using ngrok. This may cause rate limiting if you do not have a paid account.')
 
 args = parser.parse_args()
 app = QApplication(sys.argv)
 screen = app.primaryScreen()
 size = screen.availableGeometry()
 global window
-def inpaint(selection, mask, prompt, batchSize, batchCount, showSample):
+def inpaint(selection, mask, prompt, batchSize, batchCount, showSample, negative="", guidanceScale=5, skipSteps=0):
     body = {
         'batch_size': batchSize,
         'num_batches': batchCount,
         'edit': imageToBase64(selection),
         'mask': imageToBase64(mask),
-        'prompt': prompt
+        'prompt': prompt,
+        'negative': negative,
+        'guidanceScale': guidanceScale,
+        'skipSteps': skipSteps,
+        'width': selection.width,
+        'height': selection.height
     }
 
     def errorCheck(serverResponse, contextStr):
@@ -48,7 +52,7 @@ def inpaint(selection, mask, prompt, batchSize, batchCount, showSample):
                 print("RES")
                 print(serverResponse.content)
                 raise Exception(f"{serverResponse.status_code} response to {contextStr}: unknown error")
-    res = requests.post(args.server_url, json=body, timeout=5)
+    res = requests.post(args.server_url, json=body, timeout=30)
     errorCheck(res, 'New inpainting request')
         
     # POST to args.server_url, check response
@@ -71,7 +75,7 @@ def inpaint(selection, mask, prompt, batchSize, batchCount, showSample):
         # GET server_url/sample, sending previous samples:
         res = None
         try:
-            res = requests.get(f'{args.server_url}/sample', json={'samples': samples}, timeout=5)
+            res = requests.get(f'{args.server_url}/sample', json={'samples': samples}, timeout=30)
             errorCheck(res, 'sample update request')
         except Exception as err:
             errorCount += 1
@@ -103,6 +107,7 @@ def inpaint(selection, mask, prompt, batchSize, batchCount, showSample):
 
 window = MainWindow(size.width(), size.height(), None, inpaint)
 window.applyArgs(args)
+window.setGeometry(0, 0, size.width(), size.height())
 window.show()
 
 def promptForURL(promptText):
@@ -119,7 +124,7 @@ while args.server_url == '':
 # Check connection:
 def healthCheckPasses():
     try:
-        res = requests.get(args.server_url, timeout=1)
+        res = requests.get(args.server_url, timeout=30)
         return res.status_code == 200 and ('application/json' in res.headers['content-type']) \
             and 'success' in res.json() and res.json()['success'] == True
     except Exception as err:

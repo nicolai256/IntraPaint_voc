@@ -69,6 +69,7 @@ class SampleSelector(QWidget):
         """Show or hide the loading indicator"""
         if isLoading:
             self._loadingWidget.show()
+            self._loadingWidget.setMessage("Loading images")
         else:
             self._loadingWidget.hide()
         self._isLoading = isLoading
@@ -93,7 +94,6 @@ class SampleSelector(QWidget):
         self.update()
 
     def resizeEvent(self, event):
-        self._loadingWidget.setGeometry(self.frameGeometry())
         statusArea = QRect(0, 0, self.width(), self.height() // 8)
         self._sourceImageBounds = getScaledPlacement(statusArea, self._imageSize, 5)
         self._sourceImageBounds.moveLeft(statusArea.x() + 10)
@@ -101,6 +101,11 @@ class SampleSelector(QWidget):
                 self._sourceImageBounds.y(),
                 self._sourceImageBounds.width(),
                 self._sourceImageBounds.height())
+
+        loadingWidgetSize = int(statusArea.height() * 1.2)
+        loadingBounds = QRect(self.width() // 2 - loadingWidgetSize // 2, 0,
+                loadingWidgetSize, loadingWidgetSize)
+        self._loadingWidget.setGeometry(loadingBounds)
 
         textArea = QRect(self._maskImageBounds.x() + self._maskImageBounds.width() + 10,
                 statusArea.y(),
@@ -122,7 +127,6 @@ class SampleSelector(QWidget):
                 containerRect = QRect(x, y, columnSize, rowSize)
                 self._options[row][col]["bounds"] = getScaledPlacement(containerRect,
                     self._imageSize, 10)
-                print(f"row={row}, col={col}, bounds={self._options[row][col]['bounds']} in: {containerRect}")
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -139,7 +143,7 @@ class SampleSelector(QWidget):
                 else:
                     painter.fillRect(option['bounds'], Qt.black)
                     painter.setPen(QPen(Qt.white, 4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-                    painter.drawText(option['bounds'], Qt.AlignCenter, "Loading...")
+                    painter.drawText(option['bounds'], Qt.AlignCenter, "Waiting for image...")
 
     def mousePressEvent(self, event):
         """Select the arean in the image to be edited."""

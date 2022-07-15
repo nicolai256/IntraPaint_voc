@@ -27,13 +27,10 @@ class ImageViewer(QtWidgets.QWidget):
             An initial pillow Image object to load.
         selectionSize : QSize, default QSize(256, 256)
             Size in pixels of selected image sections used for inpainting.
-            Dimensions should be positive multiples of 64, no greater than 256.
         """
         super().__init__()
         assert pilImage is None or isinstance(pilImage, Image.Image)
         assert isinstance(selectionSize, QSize)
-        for dim in [selectionSize.width(), selectionSize.height()]:
-            assert dim > 0 and dim <= 256 and ((dim % 64) == 0)
 
         self._selectionSize = selectionSize
         self._borderSize = 4
@@ -52,6 +49,10 @@ class ImageViewer(QtWidgets.QWidget):
     def selectionSize(self):
         """Returns the size of the selected image area."""
         return self._selectionSize
+
+    def hasImage(self):
+        """Checks if an image has been loaded for editing."""
+        return hasattr(self, '_qimage')
 
     def getImage(self):
         """Returns the image currently being edited as a PIL Image object"""
@@ -101,9 +102,6 @@ class ImageViewer(QtWidgets.QWidget):
         initial_size = self._selectionSize
         initial_coords = self._selected
         if size:
-            for dim_name, dim in [('width', size.width()), ('height', size.height())]:
-                if not (dim > 0) or not (dim % 8) == 0:
-                    raise Exception(f'{dim_name} must be a positive, nonzero multiple of eight, found {dim}')
             self._selectionSize = size
             if not pt:
                 pt = initial_coords
@@ -131,16 +129,18 @@ class ImageViewer(QtWidgets.QWidget):
 
     def getSelectedSection(self):
         """Gets a copy of the image, cropped to the current selection area."""
-        if hasattr(self, '_selected'):
+        if hasattr(self, '_selected') and hasattr(self, '_qimage'):
             cropped_image = self._qimage.copy(self._selected.x(),
                     self._selected.y(),
                     self.selectionWidth(),
                     self.selectionHeight())
             return qImageToImage(cropped_image)
+        else:
+            print(f"selected: {self._selected}, no qimage")
     
     def imageSize(self):
         """Returns the size of the current edited image."""
-        if self._qimage:
+        if hasattr(self, '_qimage'):
             return self._qimage.size()
 
     def _imageToWidgetCoords(self, point):

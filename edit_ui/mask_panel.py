@@ -82,7 +82,8 @@ class MaskPanel(QWidget):
         maxHeight = self.clearMaskButton.y() - self.borderSize
         if creatorHeight > maxHeight:
             creatorHeight = maxHeight
-            creatorWidth = creatorHeight * self.maskCreator.selectionWidth() // self.maskCreator.selectionHeight()
+            if self.maskCreator.selectionHeight() > 0:
+                creatorWidth = creatorHeight * self.maskCreator.selectionWidth() // self.maskCreator.selectionHeight()
         if creatorHeight != self.maskCreator.height() or creatorWidth != self.maskCreator.width():
             x = (self.width() - self.borderSize - creatorWidth) // 2
             y = self.borderSize + (maxHeight - creatorHeight) // 2

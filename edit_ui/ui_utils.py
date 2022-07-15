@@ -1,4 +1,5 @@
 from PIL import Image
+from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtGui import QImage
 from PyQt5.QtCore import QBuffer, QPoint, QRect, QSize, QMargins
 import io
@@ -8,8 +9,11 @@ import io
 def imageToQImage(pilImage):
     """Convert a PIL Image to a RGB888 formatted PyQt5 QImage."""
     if isinstance(pilImage, Image.Image):
-        return QImage(pilImage.tobytes("raw","RGB"),pilImage.width,
-                pilImage.height, QImage.Format_RGB888)
+        return QImage(pilImage.tobytes("raw","RGB"),
+                pilImage.width,
+                pilImage.height,
+                pilImage.width * 3,
+                QImage.Format_RGB888)
 
 def qImageToImage(qImage):
     """Convert a PyQt5 QImage to a PIL image, in PNG format."""
@@ -51,3 +55,11 @@ def getScaledPlacement(containerRect, innerSize, marginWidth=0):
 def QEqualMargins(size):
     """Returns a QMargins object that is equally spaced on all sides."""
     return QMargins(size, size, size, size)
+
+def showErrorDialog(parent, title, text):
+    """Opens a message box to show some text to the user."""
+    messageBox = QMessageBox(parent)
+    messageBox.setWindowTitle(title)
+    messageBox.setText(text)
+    messageBox.setStandardButtons(QMessageBox.Ok)
+    messageBox.exec()
