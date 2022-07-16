@@ -25,12 +25,20 @@ class MaskPanel(QWidget):
             maskCreator.update()
         selectionChangeSignal.connect(applySelection)
 
+        self._maskBrushSize = maskCreator.getBrushSize()
+        self._sketchBrushSize = 5
 
-        self.maskBrushSizeBox = QSpinBox(self)
-        self.maskBrushSizeBox.setToolTip("Brush size")
-        self.maskBrushSizeBox.setRange(1, 200)
-        self.maskBrushSizeBox.setValue(maskCreator.getBrushSize())
-        self.maskBrushSizeBox.valueChanged.connect(lambda newSize: maskCreator.setBrushSize(newSize))
+        self.brushSizeBox = QSpinBox(self)
+        self.brushSizeBox.setToolTip("Brush size")
+        self.brushSizeBox.setRange(1, 200)
+        self.brushSizeBox.setValue(maskCreator.getBrushSize())
+        def setBrush(newSize):
+            if self.maskModeButton.isChecked():
+                self._maskBrushSize = newSize
+            else:
+                self._sketchBrushSize = newSize
+            maskCreator.setBrushSize(newSize)
+        self.brushSizeBox.valueChanged.connect(setBrush)
 
         self.eraserCheckbox = QCheckBox(self)
         self.eraserCheckbox.setText("Use eraser")
@@ -46,6 +54,35 @@ class MaskPanel(QWidget):
             self.eraserCheckbox.setChecked(False)
         self.clearMaskButton.clicked.connect(clearMask)
 
+        self.maskModeButton = QRadioButton(self)
+        self.sketchModeButton = QRadioButton(self)
+        self.maskModeButton.setText("Draw mask")
+        self.sketchModeButton.setText("Draw sketch")
+        self.maskModeButton.setToolTip("Draw over the area to be inpainted")
+        self.sketchModeButton.setToolTip("Add simple details to help guide inpainting")
+        self.maskModeButton.setChecked(True)
+        def setMaskMode(maskMode):
+            self.maskCreator.setSketchMode(not maskMode)
+            self.colorPickerButton.setVisible(not maskMode)
+            self.brushSizeBox.setValue(self._maskBrushSize if maskMode else self._sketchBrushSize)
+            self.update()
+        self.maskModeButton.toggled.connect(setMaskMode)
+
+        self.colorPickerButton = QPushButton(self)
+        self.colorPickerButton.setText("Select sketch color")
+        def getColor():
+            color = QColorDialog.getColor()
+            self.maskCreator.setSketchColor(color)
+            self.update()
+        self.colorPickerButton.clicked.connect(getColor)
+        self.colorPickerButton.setVisible(False)
+
+        self.keepSketchCheckbox = QCheckBox(self)
+        self.keepSketchCheckbox.setText("Save sketch in results")
+        self.keepSketchCheckbox.setToolTip("Set whether parts of the sketch not covered by the mask should appear in generated images")
+
+        
+
         self.layout = QGridLayout()
         self.borderSize = 4
         def makeSpacer():
@@ -56,16 +93,25 @@ class MaskPanel(QWidget):
         self.layout.addItem(makeSpacer(), 0, 6, 1, 1)
         self.layout.addWidget(self.maskCreator, 1, 1, 1, 6)
         self.layout.addWidget(QLabel(self, text="Brush size:"), 2, 1, 1, 1)
-        self.layout.addWidget(self.maskBrushSizeBox, 2, 2, 1, 1)
+        self.layout.addWidget(self.brushSizeBox, 2, 2, 1, 1)
         self.layout.addWidget(self.eraserCheckbox, 2, 3, 1, 1)
         self.layout.addWidget(self.clearMaskButton, 2, 4, 1, 2)
+        self.layout.addWidget(self.maskModeButton, 3, 1, 1, 1)
+        self.layout.addWidget(self.keepSketchCheckbox, 3, 2, 1, 1)
+        self.layout.addWidget(self.sketchModeButton, 4, 1, 1, 1)
+        self.layout.addWidget(self.colorPickerButton, 4, 2, 1, 1)
         self.layout.setRowMinimumHeight(1, 300)
         self.setLayout(self.layout)
 
     def paintEvent(self, event):
+        super().paintEvent(event)
         painter = QPainter(self)
         painter.setPen(QPen(Qt.black, self.borderSize//2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         painter.drawRect(1, 1, self.width() - 2, self.height() - 2)
+        if not self.colorPickerButton.isHidden():
+            painter.setPen(QPen(self.maskCreator.getSketchColor(), self.borderSize//2, Qt.SolidLine, Qt.RoundCap,
+                        Qt.RoundJoin))
+            painter.drawRect(self.colorPickerButton.geometry())
 
     def loadImage(self, im):
         self.maskCreator.loadImage(im)

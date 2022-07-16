@@ -139,12 +139,12 @@ class ImagePanel(QWidget):
                 return
             file = QFileDialog.getSaveFileName(self, 'Save Image')
             try:
-                if file and file[1] and (image is not None):
+                if file and file[1]:
                     file = file[0]
                     image = self.imageViewer.getImage()
                     image.save(file, "PNG")
             except Exception as err:
-                showErrorDialog(self, "Save failed", err)
+                showErrorDialog(self, "Save failed", str(err))
                 print(f"Saving image failed: {err}")
         self.saveButton.clicked.connect(saveImage)
 
@@ -156,7 +156,7 @@ class ImagePanel(QWidget):
         self.layout.addItem(makeSpacer(), 3, 0, 1, 1)
         self.layout.addItem(makeSpacer(), 0, 0, 1, 1)
         self.layout.addItem(makeSpacer(), 0, 6, 1, 1)
-        self.layout.addWidget(self.imageViewer, 1, 1, 1, 6)
+        self.layout.addWidget(self.imageViewer, 1, 1, 1, 14)
         self.layout.addWidget(self.fileSelectButton, 2, 1, 1, 1)
         self.layout.addWidget(QLabel(self, text="Image path:"), 2, 2, 1, 1)
         self.layout.addWidget(self.fileTextBox, 2, 3, 1, 1)

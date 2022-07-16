@@ -43,10 +43,20 @@ class MainWindow(QMainWindow):
                 return
             self.thread = QThread()
 
-            # If scaling is enabled, scale selection as close to 256x256 as possible while attempting to minimize
-            # aspect ratio changes:
+
+            # If sketch mode was used, write the sketch onto the image selection:
             inpaintImage = selection
             inpaintMask = mask
+            sketchImage = self.maskPanel.maskCreator.getSketch()
+            if sketchImage is not None:
+                if sketchImage.width != inpaintImage.width or sketchImage.height != inpaintImage.height:
+                    sketchImage = sketchImage.resize(inpaintImage.width, inpaintImage.height)
+                inpaintImage = inpaintImage.convert('RGBA')
+                inpaintImage = Image.alpha_composite(inpaintImage, sketchImage).convert('RGB')
+            keepSketch = (sketchImage is not None) and self.maskPanel.keepSketchCheckbox.isChecked()
+
+            # If scaling is enabled, scale selection as close to 256x256 as possible while attempting to minimize
+            # aspect ratio changes:
             if self.inpaintPanel.scalingEnabled():
                 largestDim = max(selection.width, selection.height)
                 scale = 256 / largestDim
@@ -54,12 +64,13 @@ class MainWindow(QMainWindow):
                 width = max(64, width - (width % 64))
                 height = int(selection.height * scale + 1)
                 height = max(64, height - (height % 64))
-                inpaintImage = selection.resize((width, height))
+                inpaintImage = inpaintImage.resize((width, height))
                 inpaintMask = mask.resize((width, height))
             elif inpaintMask.width != inpaintImage.width or inpaintMask.height != inpaintImage.height:
                 inpaintMask = mask.resize((inpaintImage.width, inpaintImage.height))
 
-            window = self
+
+
             class InpaintThreadWorker(QObject):
                 finished = pyqtSignal()
                 imageReady = pyqtSignal(Image.Image, int, int)
@@ -103,13 +114,15 @@ class MainWindow(QMainWindow):
                 # re-combine it with the original image. In addition, blur the mask slightly to improve image composite
                 # quality.
                 maskAlpha = mask.convert('L').point( lambda p: 255 if p < 1 else 0 ).filter(ImageFilter.GaussianBlur())
-                cleanImage = Image.composite(selection, img, maskAlpha)
+                cleanImage = Image.composite(inpaintImage if keepSketch else selection,
+                        img,
+                        maskAlpha)
                 sampleSelector.loadSampleImage(cleanImage, y, x)
                 sampleSelector.repaint()
 
             sampleSelector = SampleSelector(batchSize,
                     batchCount,
-                    selection,
+                    inpaintImage if keepSketch else selection,
                     mask,
                     selectSample,
                     closeSampleSelector)
@@ -120,7 +133,7 @@ class MainWindow(QMainWindow):
 
             def handleError(err):
                 closeSampleSelector()
-                showErrorDialog(window, "Inpainting failure", err)
+                showErrorDialog(self, "Inpainting failure", err)
             self.worker.errorSignal.connect(handleError)
             self.worker.imageReady.connect(loadSamplePreview)
             self.worker.finished.connect(lambda: sampleSelector.setIsLoading(False))
