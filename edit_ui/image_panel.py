@@ -5,7 +5,7 @@ from PyQt5.QtGui import QPainter, QPen
 from PIL import Image
 from edit_ui.image_viewer import ImageViewer
 from edit_ui.ui_utils import showErrorDialog
-import os
+import os, sys
 
 class ImagePanel(QWidget):
     """
@@ -96,13 +96,19 @@ class ImagePanel(QWidget):
 
         self.fileTextBox = QLineEdit("", self)
 
+        isPyinstallerBundle = getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
 
         # Set image path, load image viewer when a file is selected:
         self.fileSelectButton = QPushButton(self)
         self.fileSelectButton.setText("Select Image")
         def openImageFile():
             try:
-                file, fileSelected = QFileDialog.getOpenFileName(self, 'Open Image')
+                file, fileSelected = (None, None)
+                if isPyinstallerBundle:
+                    file, fileSelected = QFileDialog.getOpenFileName(self, 'Open Image',
+                        options=QFileDialog.Option.DontUseNativeDialog)
+                else:
+                    file, fileSelected = QFileDialog.getOpenFileName(self, 'Open Image')
                 if file and fileSelected:
                     self.loadImage(file)
             except Exception as err:
@@ -137,10 +143,16 @@ class ImagePanel(QWidget):
             if not self.imageViewer.hasImage():
                 showErrorDialog(self, "Save failed", "Open an image first before trying to save.")
                 return
-            file = QFileDialog.getSaveFileName(self, 'Save Image')
+            pngFilter = "Images (*.png)"
+            file, fileSelected = (None, None)
+            if isPyinstallerBundle:
+                file, fileSelected = QFileDialog.getSaveFileName(self, 'Save Image',
+                    filter=pngFilter,
+                    options=QFileDialog.Option.DontUseNativeDialog)
+            else:
+                file, fileSelected = QFileDialog.getSaveFileName(self, 'Save Image', filter=pngFilter)
             try:
-                if file and file[1]:
-                    file = file[0]
+                if file and fileSelected:
                     image = self.imageViewer.getImage()
                     image.save(file, "PNG")
             except Exception as err:
