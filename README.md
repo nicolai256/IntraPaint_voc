@@ -1,118 +1,69 @@
-# GLID-3-XL
+# IntraPaint
 
-GLID-3-xl is the [1.4B latent diffusion](https://github.com/CompVis/latent-diffusion#april-2022) model from CompVis back-ported to the guided diffusion codebase
+Collaborate with AI to make art.
 
-The model has been split into three checkpoints. This lets us fine tune the diffusion model on new datasets and for additional tasks like inpainting and super-resolution
+| ![example-1.png](./examples/example-1.png) | 
+|:--:| 
+| *1. Draw over the area you want to change, provide a text prompt for guidance* |
 
-# Install
+| ![example-2.png](./examples/example-2.png) | 
+|:--:| 
+| *2. Generate options, pick the one you like best* |
 
-First install [latent diffusion](https://github.com/CompVis/latent-diffusion)
+| ![example-3.png](./examples/example-3.png) | 
+|:--:| 
+| *3. Your choice is inserted into the image* |
+
+| ![example-4.png](./examples/example-4.png) | 
+|:--:| 
+| *4. Repeat.* |
+
+## Background:
+
+IntraPaint provides two main components: an image-generation server, and a client-side editor. The image-generation server uses [GLID-3-XL](https://github.com/Jack000/glid-3-xl) for prompt-guided inpainting, and it is also fully compatible with the fine-tuned [Ongo and Erlich models from LAION-AI](https://github.com/LAION-AI/ldm-finetune). It's designed so that it can run within free GPU instances of Google Colab, so any PC with an internet connection can run IntraPaint. 
+
+The user interface is a desktop application built with PyQt5, designed to simplify the process of repeatedly editing details within larger images using AI-generated results. By guiding the AI image generation process, you can quickly create complex works of art, maintaining creative control. Unlike other AI image generators, there is no uncertainty as to who owns the results of this process: anything you create using IntraPaint is 100% yours.
+
+At the current rate of advancement in machine learning, the image-generation capabilities of GLID-3-XL are unlikely to remain the best free option for this kind of editing for long. With this in mind, I've taken care to decouple the interface and the image generation as much as possible. When new and better systems are available, it should be easy to adapt this interface to work with them.
+
+## Setup
+
+The most basic way to run IntraPaint is to start the server in Google Colab, then connect with it from a pre-bundled instance of the client. 
+
+1. [Open the IntraPaint Server notebook in Google Colab](https://colab.research.google.com/github/centuryglass/IntraPaint/blob/colab-refactor/colabFiles/IntraPaint_colab_server.ipynb). 
+2. Follow instructions in the notebook to connect a free ngrok account, start the server, and get the server address. Most functionality will work in Colab's free GPU instances, but CLIP guidance (untested!) requires more GPU memory.
+3. Download and launch the latest version of the client (TODO: Linux, Windows, Mac download links).
+4. When prompted, enter the server address into the IntraPaint client window.
+
+At the moment, the server only supports a single client. Multiple client support will likely be added, but won't scale well without significant changes and a very powerful GPU.
+
+## Running from source:
+All scripts support multiple command-line options, and will describe those options if you run them with `--help`.
+
+### Running the client:
 ```
-# then
-git clone https://github.com/Jack000/glid-3-xl
-cd glid-3-xl
-pip install -e .
-```
-
-# Download model files
-
-```
-# text encoder (required)
-wget https://dall-3.com/models/glid-3-xl/bert.pt
-
-# ldm first stage (required)
-wget https://dall-3.com/models/glid-3-xl/kl-f8.pt
-
-# there are several diffusion models to choose from:
-
-# original diffusion model from CompVis
-wget https://dall-3.com/models/glid-3-xl/diffusion.pt
-
-# new model fine tuned on a cleaner dataset (will not generate watermarks, split images or blurry images)
-wget https://dall-3.com/models/glid-3-xl/finetune.pt
-
-# inpaint
-wget https://dall-3.com/models/glid-3-xl/inpaint.pt
-
-```
-
-# Generating images
-note: best results at 256x256 image size
-
-```
-# fast PLMS sampling
-python sample.py --model_path finetune.pt --batch_size 6 --num_batches 6 --text "a cyberpunk girl with a scifi neuralink device on her head"
-
-# classifier free guidance + CLIP guidance (better adherence to prompt, much slower)
-python sample.py --clip_guidance --model_path finetune.pt --batch_size 1 --num_batches 12 --text "a cyberpunk girl with a scifi neuralink device on her head | trending on artstation"
-
-# sample with an init image
-python sample.py --init_image picture.jpg --skip_timesteps 10 --model_path finetune.pt --batch_size 6 --num_batches 6 --text "a cyberpunk girl with a scifi neuralink device on her head"
-
-# generated images saved to ./output/
-# generated image embeddings saved to ./output_npy/ as npy files
+pip install pyqt5 requests pillow
+python IntraPaint_client.py
 ```
 
+#### Running the server:
+To run the server, you'll need a CUDA-capable GPU with around 10GB of memory. I've been using a RTX 3080.
 
-# Editing images
-aka human guided diffusion. You can use inpainting to generate more complex prompts by progressively editing the image.
+1. Start by following the [GLID-3-XL documentation](./GLID-3-XL-DOC.md) to install the required dependencies and download pretrained models. To confirm that this step is completed correctly, run `python quickEdit.py --edit examples/edit.png --mask examples/mask.png --prefix test`, and make sure it successfully generates an image at *output/test00000.png*.
+2. Install additional dependencies needed to run the server with `pip install flask flask_cors`.
+3. Start the server using `python IntraPaint_server.py --port 5555`, and the server's local address will be printed in the console output once it finishes starting.
 
-## Using the editing interface:
-```
-# Note: some, but not all command line options are supported. Additional documentation will be posted later.
-python sample.py --model_path inpaint.pt --edit_ui
-```
-1. Use the "Select Image" button to choose an image for editing, then click within the image to choose a 256x256 section for inpainting.
-2. In the box on the right, draw over the areas within the selection where you want changes to be applied.
-3. Enter a text prompt in the box on the bottom left to guide the inpainting. Use the boxes to the right of the text prompt field to set how many images are generated per batch, and how many image batches are generated.
-4. Click "Start inpainting" to begin image generation. (batch size * batch count) inpainting samples will load within the window. Once all of them have finished loading, click one to apply it to the edited image, or click "Cancel" to discard all the inpainting samples.
-5. Once you've finished editing, use the "Save Image" button to save your changes.
+#### Run as a single application:
+Once you've followed the steps for setting up both the client and server, you can run both together using `python IntraPaint_unified.py` In this mode the two components will communicate directly instead of through HTTP requests, so performance is slightly better.
 
+## Tips:
+- Larger edit areas lose details due to scaling, best results are at 256x256 or smaller.
+- Non-square edit areas tend to produce worse results than square areas.
+- The AI can only see the section of the image that's currently in the editing area. If you're trying to get it to extend or match other parts of your image, make sure they're in that area.
+- Using the "draw sketch" option, you can draw directly into the selected area on the right side of the screen to provide additional visual guidance to the AI. This can make it much easier to influence what features it emphasizes and what colors it uses. 
 
-## Single edits (original editing mode):
+## Original GLID-3-XL command-line functionality:
+All functionality is still available, although some features are untested. I've created a [colab notebook](https://colab.research.google.com/github/centuryglass/IntraPaint/blob/colab-refactor/colabFiles/GLID_3_XL_testing.ipynb) you can use to test these. Scripts have been divided up into separate files. Examples below provide minimal valid commands, but all command line options from the original are still present. Follow [GLID-3-XL documentation](./GLID-3-XL-DOC.md) first to set up dependencies and download models.
 
-note: you can use > 256px but the model only sees 256x256 at a time, so ensure the inpaint area is smaller than that
-
-note: inpaint training wip
-```
-
-# install PyQt5 if you want to use a gui, otherwise supply a mask file
-pip install PyQt5
-
-# this will pop up a window, use your mouse to paint
-# use the generated npy files instead of png for best quality
-python sample.py --model_path inpaint.pt --edit output_npy/00000.npy --batch_size 6 --num_batches 6 --text "your prompt"
-
-# after painting, the mask is saved for re-use
-python sample.py --mask mask.png --model_path inpaint.pt --edit output_npy/00000.npy --batch_size 6 --num_batches 6 --text "your prompt"
-
-# additional arguments for uncropping
-python sample.py --edit_x 64 --edit_y 64 --edit_width 128 --edit_height 128 --model_path inpaint.pt --edit output_npy/00000.npy --batch_size 6 --num_batches 6 --text "your prompt"
-
-# autoedit uses the inpaint model to give the ldm an image prompting function (that works differently from --init_image)
-# it continuously edits random parts of the image to maximize clip score for the text prompt
-python autoedit.py --edit image.png --model_path inpaint.pt --batch_size 6 --text "your prompt"
-
-```
-
-# Training/Fine tuning
-Train with same flags as guided diffusion. Data directory should contain image and text files with the same name (image1.png image1.txt)
-
-```
-# not possible to train on 24gb vram currently!
-MODEL_FLAGS="--ema_rate 0.9999 --attention_resolutions 32,16,8 --class_cond False --diffusion_steps 1000 --image_size 32 --learn_sigma False --noise_schedule linear --num_channels 320 --num_heads 8 --num_res_blocks 2 --resblock_updown False --use_fp16 True --use_scale_shift_norm False"
-TRAIN_FLAGS="--lr 1e-5 --batch_size 64 --microbatch 1 --log_interval 1 --save_interval 5000 --kl_model kl-f8.pt --bert_model bert.pt --resume_checkpoint diffusion.pt"
-export OPENAI_LOGDIR=./logs/
-export TOKENIZERS_PARALLELISM=false
-python scripts/image_train_latent.py --data_dir /path/to/data $MODEL_FLAGS $TRAIN_FLAGS
-```
-
-Train for inpainting
-```
-# batch size > 1 required
-MODEL_FLAGS="--dropout 0.1 --ema_rate 0.9999 --attention_resolutions 32,16,8 --class_cond False --diffusion_steps 1000 --image_size 32 --learn_sigma False --noise_schedule linear --num_channels 320 --num_heads 8 --num_res_blocks 2 --resblock_updown False --use_fp16 True --use_scale_shift_norm False"
-TRAIN_FLAGS="--lr --batch_size 64 --microbatch 1 --log_interval 1 --save_interval 5000 --kl_model kl-f8.pt --bert_model bert.pt --resume_checkpoint diffusion.pt"
-export OPENAI_LOGDIR=./logs/
-export TOKENIZERS_PARALLELISM=false
-python scripts/image_train_inpaint.py --data_dir /path/to/data $MODEL_FLAGS $TRAIN_FLAGS
-```
+- Image generation: `python generate.py --text "Your prompt here"
+- Single inpainting operations: `python quickEdit.py --edit "path/to/edited/image" --text "Your prompt here"`

@@ -1,9 +1,11 @@
-from PyQt5.QtWidgets import *
-from PyQt5.QtCore import Qt, QPoint, QRect, QBuffer
+from PyQt5.QtWidgets import QWidget, QSpinBox, QLineEdit, QPushButton, QLabel, QGridLayout, QSpacerItem, QFileDialog, QMessageBox
+from PyQt5.QtCore import Qt, QPoint, QSize, QRect, QBuffer
 import PyQt5.QtGui as QtGui
 from PyQt5.QtGui import QPainter, QPen
 from PIL import Image
 from edit_ui.image_viewer import ImageViewer
+from edit_ui.ui_utils import showErrorDialog
+import os, sys
 
 class ImagePanel(QWidget):
     """
@@ -25,82 +27,138 @@ class ImagePanel(QWidget):
             (Re)loads the image from the path in the fileTextBox.
     """
 
-    def __init__(self,
-            pilImage=None,
-            borderSize=4,
-            selectionWidth=256,
-            selectionHeight=256):
+    def __init__(self, pilImage=None, selectionSize=QSize(256, 256), scaleEnabled = True):
         """
         Parameters
         ----------
         pilImage : Image, optional
             An initial pillow Image object to load.
-        borderSize : int, optional
-            Width in pixels of the border around the image.
-        selectionWidth : int, optional
-            Width in pixels of selected image sections used for inpainting.
-            Values greater than 256 will probably not work well.
-        selectionHeight : int, optional
-            Height in pixels of selected image sections used for inpainting.
-            Values greater than 256 will probably not work well.
+        selectionSize : QSize, default QSize(256, 256)
+            Size in pixels of selected image sections used for inpainting.
+            Dimensions should be positive multiples of 64, no greater than 256.
         """
         super().__init__()
-        self.imageViewer = ImageViewer(pilImage,
-                borderSize,
-                selectionWidth,
-                selectionHeight)
+        assert pilImage is None or isinstance(pilImage, Image.Image)
+        assert isinstance(selectionSize, QSize)
+        self._scaleEnabled = scaleEnabled
+
+        self.imageViewer = ImageViewer(pilImage, selectionSize)
         imageViewer = self.imageViewer
 
         # wire x/y coordinate boxes to set selection coordinates:
         self.xCoordBox = QSpinBox(self)
+        self.yCoordBox = QSpinBox(self)
         self.xCoordBox.setToolTip("Selected X coordinate")
+        self.yCoordBox.setToolTip("Selected Y coordinate")
         def setX(value):
-            if hasattr(imageViewer, 'selected'):
-                selection = QPoint(value, imageViewer.selected.y())
+            lastSelected = imageViewer.getSelection()
+            if lastSelected:
+                selection = QPoint(value, lastSelected.y())
                 imageViewer.setSelection(selection)
         self.xCoordBox.valueChanged.connect(setX)
-        self.yCoordBox = QSpinBox(self)
-        self.xCoordBox.setToolTip("Selected Y coordinate")
         def setY(value):
-            if hasattr(imageViewer, 'selected'):
-                selection = QPoint(imageViewer.selected.x(), value)
+            lastSelected = imageViewer.getSelection()
+            if lastSelected:
+                selection = QPoint(lastSelected.x(), value)
                 imageViewer.setSelection(selection)
         self.yCoordBox.valueChanged.connect(setY)
 
+        # Selection size controls:
+        self.widthBox = QSpinBox(self)
+        self.heightBox = QSpinBox(self)
+        for sizeControl, typeName in [(self.widthBox, "width"), (self.heightBox, "height")]:
+            sizeControl.setToolTip(f"Selected area {typeName}")
+            sizeControl.setRange(64, 256)
+            sizeControl.setSingleStep(64)
+            sizeControl.setValue(256)
+        def setW(value):
+            size = QSize(value, imageViewer.selectionHeight())
+            imageSize = self.imageViewer.imageSize()
+            if imageSize:
+                self.xCoordBox.setMaximum(imageSize.width() - value)
+            imageViewer.setSelection(size=size)
+        self.widthBox.valueChanged.connect(setW)
+        def setH(value):
+            size = QSize(imageViewer.selectionWidth(), value)
+            imageSize = self.imageViewer.imageSize()
+            if imageSize:
+                self.yCoordBox.setMaximum(imageSize.height() - value)
+            imageViewer.setSelection(size=size)
+        self.heightBox.valueChanged.connect(setH)
+
         # Update coordinate controls automatically when the selection changes:
-        def setCoords(pt):
+        def setCoords(pt, size):
             self.xCoordBox.setValue(pt.x())
             self.yCoordBox.setValue(pt.y())
+            self.widthBox.setValue(size.width())
+            self.heightBox.setValue(size.height())
         self.imageViewer.onSelection.connect(setCoords)
 
-        self.fileTextBox = QLineEdit("Image Path goes here", self)
+        self.fileTextBox = QLineEdit("", self)
 
-        def loadImage(filePath):
-            try:
-                image = Image.open(open(filePath, 'rb')).convert('RGB')
-                self.imageViewer.setImage(image)
-                self.fileTextBox.setText(filePath)
-                self.xCoordBox.setRange(0, max(
-                            image.width - self.imageViewer.selectionWidth, 0))
-                self.yCoordBox.setRange(0, max(
-                            image.height - self.imageViewer.selectionHeight, 0))
-            except Exception as err:
-                print(f"Failed to load image from '{filePath}': {err}")
+        isPyinstallerBundle = getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
 
         # Set image path, load image viewer when a file is selected:
         self.fileSelectButton = QPushButton(self)
         self.fileSelectButton.setText("Select Image")
         def openImageFile():
-            file = QFileDialog.getOpenFileName(self, 'Open Image')
-            if file:
-                loadImage(file[0])
+            try:
+                file, fileSelected = (None, None)
+                if isPyinstallerBundle:
+                    file, fileSelected = QFileDialog.getOpenFileName(self, 'Open Image',
+                        options=QFileDialog.Option.DontUseNativeDialog)
+                else:
+                    file, fileSelected = QFileDialog.getOpenFileName(self, 'Open Image')
+                if file and fileSelected:
+                    self.loadImage(file)
+            except Exception as err:
+                showErrorDialog(self, "Open failed", err)
         self.fileSelectButton.clicked.connect(openImageFile)
 
         self.imgReloadButton = QPushButton(self)
         self.imgReloadButton.setText("Reload image")
         def reloadImage():
-            loadImage(self.fileTextBox.text())
+            if self.fileTextBox.text() == "":
+                showErrorDialog(self, "Reload failed", f"Enter an image path or click 'Open Image' first.")
+                return
+            if not os.path.isfile(self.fileTextBox.text()):
+                showErrorDialog(self, "Reload failed", f"Image path '{self.fileTextBox.text()}' is not a valid file.")
+                return
+            if self.imageViewer.hasImage():
+                confirmBox = QMessageBox(self)
+                confirmBox.setWindowTitle("Reload image?")
+                confirmBox.setWindowTitle("Reload image?")
+                confirmBox.setText("This will overwrite all unsaved changes.")
+                confirmBox.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+                response = confirmBox.exec()
+                if response == QMessageBox.Cancel:
+                    return
+            self.loadImage(self.fileTextBox.text())
+
         self.imgReloadButton.clicked.connect(reloadImage)
+
+        self.saveButton = QPushButton(self)
+        self.saveButton.setText("Save Image")
+        def saveImage():
+            if not self.imageViewer.hasImage():
+                showErrorDialog(self, "Save failed", "Open an image first before trying to save.")
+                return
+            pngFilter = "Images (*.png)"
+            file, fileSelected = (None, None)
+            if isPyinstallerBundle:
+                file, fileSelected = QFileDialog.getSaveFileName(self, 'Save Image',
+                    filter=pngFilter,
+                    options=QFileDialog.Option.DontUseNativeDialog)
+            else:
+                file, fileSelected = QFileDialog.getSaveFileName(self, 'Save Image', filter=pngFilter)
+            try:
+                if file and fileSelected:
+                    image = self.imageViewer.getImage()
+                    image.save(file, "PNG")
+            except Exception as err:
+                showErrorDialog(self, "Save failed", str(err))
+                print(f"Saving image failed: {err}")
+        self.saveButton.clicked.connect(saveImage)
 
         self.layout = QGridLayout()
         self.borderSize = 4
@@ -110,16 +168,68 @@ class ImagePanel(QWidget):
         self.layout.addItem(makeSpacer(), 3, 0, 1, 1)
         self.layout.addItem(makeSpacer(), 0, 0, 1, 1)
         self.layout.addItem(makeSpacer(), 0, 6, 1, 1)
-        self.layout.addWidget(self.imageViewer, 1, 1, 1, 6)
+        self.layout.addWidget(self.imageViewer, 1, 1, 1, 14)
         self.layout.addWidget(self.fileSelectButton, 2, 1, 1, 1)
-        self.layout.addWidget(self.fileTextBox, 2, 2, 1, 1)
-        self.layout.addWidget(self.imgReloadButton, 2, 3, 1, 1)
-        self.layout.addWidget(self.xCoordBox, 2, 4, 1, 1)
-        self.layout.addWidget(self.yCoordBox, 2, 5, 1, 1)
+        self.layout.addWidget(QLabel(self, text="Image path:"), 2, 2, 1, 1)
+        self.layout.addWidget(self.fileTextBox, 2, 3, 1, 1)
+
+
+        self.layout.addWidget(QLabel(self, text="X:"), 2, 4, 1, 1)
+        self.layout.addWidget(self.xCoordBox, 2, 5, 1, 1)
+        self.layout.addWidget(QLabel(self, text="Y:"), 2, 6, 1, 1)
+        self.layout.addWidget(self.yCoordBox, 2, 7, 1, 1)
+
+        self.layout.addWidget(QLabel(self, text="W:"), 2, 8, 1, 1)
+        self.layout.addWidget(self.widthBox, 2, 9, 1, 1)
+        self.layout.addWidget(QLabel(self, text="H:"), 2, 10, 1, 1)
+        self.layout.addWidget(self.heightBox, 2, 11, 1, 1)
+
+        self.layout.addWidget(self.imgReloadButton, 2, 12, 1, 1)
+        self.layout.addWidget(self.saveButton, 2, 13, 1, 1)
+
         self.layout.setRowMinimumHeight(1, 300)
-        self.layout.setRowMinimumHeight(1, 300)
-        self.layout.setColumnStretch(2, 255)
+        self.layout.setColumnStretch(3, 255)
         self.setLayout(self.layout)
+
+    def loadImage(self, filePath):
+        try:
+            self.imageViewer.setImage(filePath)
+            self.fileTextBox.setText(filePath)
+            imageSize = self.imageViewer.imageSize()
+            if imageSize:
+                if imageSize.width() < 64 or imageSize.height() < 64:
+                    raise Exception(f"image width and height should be no smaller than 64px, got {imageSize}")
+                self.xCoordBox.setRange(0, max(
+                            imageSize.width() - self.imageViewer.selectionWidth(), 0))
+                self.yCoordBox.setRange(0, max(
+                            imageSize.height() - self.imageViewer.selectionHeight(), 0))
+                self.reloadScaleBounds()
+        except Exception as err:
+            print(f"Failed to load image from '{filePath}': {err}")
+            showErrorDialog(self, "Loading image failed", err)
+
+
+    def setScaleEnabled(self, scaleEnabled):
+        if scaleEnabled != self._scaleEnabled:
+            self._scaleEnabled = scaleEnabled
+            self.reloadScaleBounds()
+
+    def reloadScaleBounds(self):
+        imageSize = self.imageViewer.imageSize()
+        if imageSize is None:
+            imageSize = QSize(0, 0)
+        for spinBox, dim in [(self.widthBox, imageSize.width()), (self.heightBox, imageSize.height())]:
+            if self._scaleEnabled and dim != 0:
+                spinBox.setMaximum(dim)
+                spinBox.setSingleStep(8)
+            else:
+                spinBox.setSingleStep(64)
+                if imageSize:
+                    spinBox.setMaximum(min(256, dim - (dim % 64)))
+                else:
+                    spinBox.setMaximum(256)
+                if (spinBox.value() % 64) != 0:
+                    spinBox.setValue(spinBox.value() - (spinBox.value() % 64))
 
     def paintEvent(self, event):
         painter = QPainter(self)

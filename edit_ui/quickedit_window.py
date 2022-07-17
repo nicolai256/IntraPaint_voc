@@ -3,7 +3,7 @@ from PyQt5.QtCore import Qt, QPoint, QRect, QBuffer
 from PyQt5.QtGui import QPainter, QPen
 from PIL import Image, ImageOps
 import PyQt5.QtGui as QtGui
-import io
+import io, sys
 
 class QuickEditWindow(QMainWindow):
 
@@ -12,14 +12,23 @@ class QuickEditWindow(QMainWindow):
         self.drawing = False
         self.lastPoint = QPoint()
 
-        self.qim = QtGui.QImage(im.tobytes("raw","RGB"), im.width, im.height, QtGui.QImage.Format_RGB888)
+        try:
+            if isinstance(im, str):
+                self.qim = QtGui.QImage(im)
+            elif isinstance(im, Image.Image):
+                self.qim = QtGui.QImage(im.tobytes("raw","RGB"), im.width, im.height, QtGui.QImage.Format_RGB888)
+            else:
+                raise Exception(f"Invalid source image type: {im}")
+        except Exception as err:
+            print(f"Error: {err}")
+            sys.exit()
         self.image = QtGui.QPixmap.fromImage(self.qim)
 
-        canvas = QtGui.QImage(im.width, im.height, QtGui.QImage.Format_ARGB32)
+        canvas = QtGui.QImage(self.qim.width(), self.qim.height(), QtGui.QImage.Format_ARGB32)
         self.canvas = QtGui.QPixmap.fromImage(canvas)
         self.canvas.fill(Qt.transparent)
 
-        self.setGeometry(0, 0, im.width, im.height)
+        self.setGeometry(0, 0, self.qim.width(), self.qim.height())
         self.resize(self.image.width(), self.image.height())
         self.show()
 
@@ -60,3 +69,11 @@ class QuickEditWindow(QMainWindow):
         canvas = QtGui.QImage(self.width(), self.height(), QtGui.QImage.Format_ARGB32)
         self.canvas = QtGui.QPixmap.fromImage(canvas)
         self.canvas.fill(Qt.transparent)
+
+def getDrawnMask(width, height, image):
+    """Get the user to draw an image mask, then return it as a PIL Image."""
+    print('draw the area for inpainting, then close the window')
+    app = QApplication(sys.argv)
+    d = QuickEditWindow(width, height, image)
+    app.exec_()
+    return d.getMask()
