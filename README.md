@@ -1,82 +1,69 @@
-# TODO_NAME
+# IntraPaint
 
-TODO_NAME - collaborate with AI to make art.
+Collaborate with AI to make art.
 
-- Fig. 1: Select an area for editing, provide a text prompt for guidance
+| ![example-1.png](./examples/example-1.png) | 
+|:--:| 
+| *1. Draw over the area you want to change, provide a text prompt for guidance* |
 
-- Fig. 2: Generate options, pick the one you like best
+| ![example-2.png](./examples/example-2.png) | 
+|:--:| 
+| *2. Generate options, pick the one you like best* |
 
-- Fig. 3: Your choice is inserted into the image
+| ![example-3.png](./examples/example-3.png) | 
+|:--:| 
+| *3. Your choice is inserted into the image* |
 
-- Fig. 4: Repeat
+| ![example-4.png](./examples/example-4.png) | 
+|:--:| 
+| *4. Repeat.* |
 
 ## Background:
 
-- Uses GLID-3-XL for prompt-guided inpainting
-- Interface written in PyQt5
-- Simple REST client/server design allows editing on any PC, using Google Colab or a server of your choice to handle image processing.
+IntraPaint provides two main components: an image-generation server, and a client-side editor. The image-generation server uses [GLID-3-XL](https://github.com/Jack000/glid-3-xl) for prompt-guided inpainting, and it is also fully compatible with the fine-tuned [Ongo and Erlich models from LAION-AI](https://github.com/LAION-AI/ldm-finetune). It's designed so that it can run within free GPU instances of Google Colab, so any PC with an internet connection can run IntraPaint. 
 
-Unimplemented feature ideas: [./TODO.md]
+The user interface is a desktop application built with PyQt5, designed to simplify the process of repeatedly editing details within larger images using AI-generated results. By guiding the AI image generation process, you can quickly create complex works of art, maintaining creative control. Unlike other AI image generators, there is no uncertainty as to who owns the results of this process: anything you create using IntraPaint is 100% yours.
+
+At the current rate of advancement in machine learning, the image-generation capabilities of GLID-3-XL are unlikely to remain the best free option for this kind of editing for long. With this in mind, I've taken care to decouple the interface and the image generation as much as possible. When new and better systems are available, it should be easy to adapt this interface to work with them.
 
 ## Setup
 
-Client/server setup, multiple ways to run:
-All scripts support multiple command-line options, use the `--help` flag with any of them to view details.
+The most basic way to run IntraPaint is to start the server in Google Colab, then connect with it from a pre-bundled instance of the client. 
 
-### Client - editing interface
+1. [Open the IntraPaint Server notebook in Google Colab](https://colab.research.google.com/github/centuryglass/IntraPaint/blob/colab-refactor/colabFiles/IntraPaint_colab_server.ipynb). 
+2. Follow instructions in the notebook to connect a free ngrok account, start the server, and get the server address. Most functionality will work in Colab's free GPU instances, but CLIP guidance (untested!) requires more GPU memory.
+3. Download and launch the latest version of the client (TODO: Linux, Windows, Mac download links).
+4. When prompted, enter the server address into the IntraPaint client window.
 
-### Run from build:
-TODO: Build standalone executables for Win, Mac, Linux, add to release
+At the moment, the server only supports a single client. Multiple client support will likely be added, but won't scale well without significant changes and a very powerful GPU.
 
-#### Run directly:
-Install deps:
+## Running from source:
+All scripts support multiple command-line options, and will describe those options if you run them with `--help`.
+
+### Running the client:
 ```
-pip install (QT deps, etc)
-```
-
-Run:
-```
-python inpainting_client.py
-```
-
-Enter server address on prompt.
-
-### Server - image generation
-Note: server currently only supports a single client. Multiple client support will likely be added, but won't scale well without significant changes and a very powerful server.
-
-#### Run from Colab notebook:
-[TODO: Colab server link]
-
-Follow instructions in the notebook to connect a free ngrok account, start the server, and get the server address. Most functionality will work in Colab's free GPU instances, but CLIP guidance (untested!) requires more GPU memory.
-
-#### Run directly:
-Requires a CUDA-capable GPU with around 10GB of RAM.
-
-Setup: follow [GLID-3-XL documentation](./GLID-3-XL-DOC.md) to get models and install dependencies. I recommend using TODO_CONDA_link to manage dependencies.
-
-Install additional deps:
-```
-pip install (Flask deps, etc)
-```
-Run:
-```
-python inpainting_server.py
+pip install pyqt5 requests pillow
+python IntraPaint_client.py
 ```
 
-The server link will appear in the output, port can be changed with `TODO_PORT_FLAG`.
+#### Running the server:
+To run the server, you'll need a CUDA-capable GPU with around 10GB of memory. I've been using a RTX 3080.
 
-#### Run both as a single application:
-Follow direct server setup instructions above to install dependencies.
+1. Start by following the [GLID-3-XL documentation](./GLID-3-XL-DOC.md) to install the required dependencies and download pretrained models. To confirm that this step is completed correctly, run `python quickEdit.py --edit examples/edit.png --mask examples/mask.png --prefix test`, and make sure it successfully generates an image at *output/test00000.png*.
+2. Install additional dependencies needed to run the server with `pip install flask flask_cors`.
+3. Start the server using `python IntraPaint_server.py --port 5555`, and the server's local address will be printed in the console output once it finishes starting.
 
-Run `python inpainting_ui.py`
+#### Run as a single application:
+Once you've followed the steps for setting up both the client and server, you can run both together using `python IntraPaint_unified.py` In this mode the two components will communicate directly instead of through HTTP requests, so performance is slightly better.
 
 #### Tips:
 - Larger edit areas lose details due to scaling, best results are at 256x256 or smaller.
 - Non-square edit areas tend to produce worse results than square areas.
-- Use sketch mode to provide visual cues to the image generator.
+- The AI can only see the section of the image that's currently in the editing area. If you're trying to get it to extend or match other parts of your image, make sure they're in that area.
+- Using the "draw sketch" option, you can draw directly into the selected area on the right side of the screen to provide additional visual guidance to the AI. This can make it much easier to influence what features it emphasizes and what colors it uses. 
 
 #### Original GLID-3-XL command-line functionality:
-All functionality is still available although some features are untested, and some like CPU mode weren't working in the original project either. I've created a [colab notebook](colab link here) you can use to test these. Scripts have been divided up into separate files. Examples below provide minimal valid commands, but all command line options from the original are still present. Setup: follow [GLID-3-XL documentation](./GLID-3-XL-DOC.md) .
+All functionality is still available, although some features are untested. I've created a [colab notebook](https://colab.research.google.com/github/centuryglass/IntraPaint/blob/colab-refactor/colabFiles/GLID_3_XL_testing.ipynb) you can use to test these. Scripts have been divided up into separate files. Examples below provide minimal valid commands, but all command line options from the original are still present. Follow [GLID-3-XL documentation](./GLID-3-XL-DOC.md) first to set up dependencies and download models.
 
 - Image generation: `python generate.py --text "Your prompt here"
 - Single inpainting operations: `python quickEdit.py --edit "path/to/edited/image" --text "Your prompt here"`
