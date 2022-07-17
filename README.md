@@ -32,7 +32,7 @@ The most basic way to run IntraPaint is to start the server in Google Colab, the
 
 1. [Open the IntraPaint Server notebook in Google Colab](https://colab.research.google.com/github/centuryglass/IntraPaint/blob/colab-refactor/colabFiles/IntraPaint_colab_server.ipynb). 
 2. Follow instructions in the notebook to connect a free ngrok account, start the server, and get the server address. Most functionality will work in Colab's free GPU instances, but CLIP guidance (untested!) requires more GPU memory.
-3. Download and launch the latest version of the client (TODO: Linux, Windows, Mac download links).
+3. Download and launch the latest version of the client ([Windows](https://github.com/centuryglass/IntraPaint/releases/download/v0.1.0/IntraPaint-windows.exe), [Mac](https://github.com/centuryglass/IntraPaint/releases/download/v0.1.0/IntraPaint-mac), [Linux](https://github.com/centuryglass/IntraPaint/releases/download/v0.1.0/IntraPaint-Linux.IntraPaint-Linux))
 4. When prompted, enter the server address into the IntraPaint client window.
 
 At the moment, the server only supports a single client. Multiple client support will likely be added, but won't scale well without significant changes and a very powerful GPU.
