@@ -50,13 +50,16 @@ class MainWindow(QMainWindow):
             sketchImage = self.maskPanel.maskCreator.getSketch()
             if sketchImage is not None:
                 if sketchImage.width != inpaintImage.width or sketchImage.height != inpaintImage.height:
-                    sketchImage = sketchImage.resize(inpaintImage.width, inpaintImage.height)
+                    sketchImage = sketchImage.resize(inpaintImage.width, inpaintImage.height).convert('RGBA')
                 inpaintImage = inpaintImage.convert('RGBA')
                 inpaintImage = Image.alpha_composite(inpaintImage, sketchImage).convert('RGB')
             keepSketch = (sketchImage is not None) and self.maskPanel.keepSketchCheckbox.isChecked()
 
             # If scaling is enabled, scale selection as close to 256x256 as possible while attempting to minimize
-            # aspect ratio changes:
+            # aspect ratio changes. Keep the unscaled version so it can be used for compositing if "keep sketch"
+            # is checked.
+            unscaledInpaintImage = inpaintImage
+
             if self.inpaintPanel.scalingEnabled():
                 largestDim = max(selection.width, selection.height)
                 scale = 256 / largestDim
@@ -114,7 +117,7 @@ class MainWindow(QMainWindow):
                 # re-combine it with the original image. In addition, blur the mask slightly to improve image composite
                 # quality.
                 maskAlpha = mask.convert('L').point( lambda p: 255 if p < 1 else 0 ).filter(ImageFilter.GaussianBlur())
-                cleanImage = Image.composite(inpaintImage if keepSketch else selection,
+                cleanImage = Image.composite(unscaledInpaintImage if keepSketch else selection,
                         img,
                         maskAlpha)
                 sampleSelector.loadSampleImage(cleanImage, y, x)
@@ -122,7 +125,7 @@ class MainWindow(QMainWindow):
 
             sampleSelector = SampleSelector(batchSize,
                     batchCount,
-                    inpaintImage if keepSketch else selection,
+                    (unscaledInpaintImage if keepSketch else selection).convert('RGB'),
                     mask,
                     selectSample,
                     closeSampleSelector)
