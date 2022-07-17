@@ -56,13 +56,13 @@ To run the server, you'll need a CUDA-capable GPU with around 10GB of memory. I'
 #### Run as a single application:
 Once you've followed the steps for setting up both the client and server, you can run both together using `python IntraPaint_unified.py` In this mode the two components will communicate directly instead of through HTTP requests, so performance is slightly better.
 
-#### Tips:
+## Tips:
 - Larger edit areas lose details due to scaling, best results are at 256x256 or smaller.
 - Non-square edit areas tend to produce worse results than square areas.
 - The AI can only see the section of the image that's currently in the editing area. If you're trying to get it to extend or match other parts of your image, make sure they're in that area.
 - Using the "draw sketch" option, you can draw directly into the selected area on the right side of the screen to provide additional visual guidance to the AI. This can make it much easier to influence what features it emphasizes and what colors it uses. 
 
-#### Original GLID-3-XL command-line functionality:
+## Original GLID-3-XL command-line functionality:
 All functionality is still available, although some features are untested. I've created a [colab notebook](https://colab.research.google.com/github/centuryglass/IntraPaint/blob/colab-refactor/colabFiles/GLID_3_XL_testing.ipynb) you can use to test these. Scripts have been divided up into separate files. Examples below provide minimal valid commands, but all command line options from the original are still present. Follow [GLID-3-XL documentation](./GLID-3-XL-DOC.md) first to set up dependencies and download models.
 
 - Image generation: `python generate.py --text "Your prompt here"
